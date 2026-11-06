@@ -1,13 +1,16 @@
-"""Exercise real Home Assistant configuration and options flows."""
+"""Exercise Home Assistant's real config and options flow machinery."""
 
-from homeassistant import config_entries, data_entry_flow
+from homeassistant import data_entry_flow
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.ha_lists.const import DOMAIN
 
 
-async def test_config_flow_creates_single_local_entry(hass):
-    """A local entry can be created without external credentials."""
-    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+async def test_config_flow_creates_local_entry(hass):
+    """Create a local entry without credentials."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": "user"}
+    )
     assert result["type"] is data_entry_flow.FlowResultType.FORM
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
     assert result["type"] is data_entry_flow.FlowResultType.CREATE_ENTRY
@@ -15,15 +18,14 @@ async def test_config_flow_creates_single_local_entry(hass):
     assert result["data"] == {}
 
 
-async def test_options_flow_persists_list_selection(hass):
-    """Options are stored on the entry rather than browser state."""
-    entry = config_entries.ConfigEntry(
-        version=1,
-        minor_version=1,
+async def test_options_flow_persists_selected_lists(hass):
+    """Use HA's options manager and a real to-do entity selector."""
+    hass.states.async_set("todo.groceries", "0")
+    hass.states.async_set("todo.hardware", "0")
+    entry = MockConfigEntry(
         domain=DOMAIN,
         title="HA Lists",
         data={},
-        source=config_entries.SOURCE_USER,
         options={},
         unique_id=DOMAIN,
     )
