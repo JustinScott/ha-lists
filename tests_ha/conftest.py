@@ -4,6 +4,6 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
-def enable_custom_integrations(enable_custom_integrations):
-    """Enable loading custom integrations in the HA test harness."""
+def allow_custom_components(enable_custom_integrations):
+    """Enable custom integrations through the HA test plugin's fixture."""
     return enable_custom_integrations
