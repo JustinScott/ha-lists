@@ -86,3 +86,29 @@ Follow the milestones in `specs.md`: foundation; core UI; rich editor; suggestio
 - https://developers.home-assistant.io/docs/architecture_index/
 
 Verify the current documentation at implementation time; links are starting points, not a substitute for checking supported APIs.
+
+## Mandatory pre-commit engineering and testing gate (2026-11-07)
+
+This section is binding for **every** change, including agent-generated patches, tests, workflows, and documentation. Treat official Home Assistant guidance as a living reference; consult the relevant pages at implementation time rather than assuming this checklist supersedes newer guidance.
+
+1. **Read before editing:** `AGENTS.md`, relevant `specs.md` sections, current Home Assistant contributor developer/architecture docs, official Home Assistant Core `AGENTS.md`, the official integration knowledge/AI skill where applicable, the relevant quality-scale rules, and Python/Ruff/pytest guidance. Identify the exact supported HA APIs and version compatibility. Prefer established Gold/Platinum integration patterns. Do not blindly copy Core-only tooling into a HACS custom integration.
+2. **Testing framework setup:** Use `pytest-homeassistant-custom-component` for custom integration tests, matching a supported Home Assistant release. Enable `asyncio_mode = "auto"` for pytest-asyncio; make the repository root importable (`python -m pytest` or equivalent); use the framework's `enable_custom_integrations` fixture without shadowing it; import `MockConfigEntry` from `pytest_homeassistant_custom_component.common`. Respect fixture initialization order, especially for recorder-related fixtures. Put fixture JSON under a colocated `fixtures/` directory. Configure the framework's Syrupy snapshot extension when using snapshots.
+3. **Behavioral tests, not just source contracts:** Exercise public HA interfaces: config flows through `hass.config_entries.flow`, setup/unload through `hass.config_entries.async_setup/async_unload`, state through `hass.states`, actions through `hass.services.async_call`, WebSocket commands through an authenticated HA test client, and registries where applicable. Pure helper functions may have focused unit tests, but string matching and compile checks are never substitutes for behavior tests. Mock external provider calls; never contact production HA or live accounts.
+4. **Coverage and cases:** Test every config/options step, duplicate setup, error and recovery paths, setup/unload, unavailable/deleted `todo` entities, authorization and malformed WebSocket requests, provider capability differences, stale responses, and every bug regression. Pursue Bronze-level complete config-flow coverage and Silver-level >95% per-module coverage where practical; measure and report actual coverage rather than asserting it. Use parameterization with named cases; avoid branches in tests; use deterministic fixtures and a time freezer instead of wall-clock dependencies.
+5. **Typing and async discipline:** Annotate function parameters/returns, including test parameters, with concrete types. Prefer `@pytest.mark.usefixtures` for fixtures not referenced directly. Use HA's async APIs, avoid blocking disk/network work on the event loop, manage subscriptions/listeners and cleanup on unload, and preserve HA config-entry lifecycle conventions. Prefer straightforward Python, small single-purpose functions, clear names, explicit validated contracts, minimal dependencies, and concise comments explaining non-obvious constraints. Do not add defensive checks for inputs already validated by HA unless a new unsafe transformation warrants them.
+6. **Translations, security, and compatibility:** Keep user-visible strings translatable and test translation behavior. After editing `strings.json`, regenerate/check `translations/en.json` using the supported workflow for this custom integration; Core's `script.translations` command is Core-specific and must not be assumed available here. Protect secrets, task contents, auth boundaries, privacy, and provider-independent data contracts. For Core quality-scale requirements that do not apply to this custom integration, document why rather than claiming compliance.
+7. **Required verification before commit:** Run `ruff check .`, `ruff format --check .`, `python -m pytest -q`, `python -m pytest -q tests_ha`, Python compile checks, frontend syntax/tests, and integration-specific checks as available. Check actual CI results after pushing; inspect failing job logs, fix the root cause, and repeat until green. A push or a passing lint job is **not** proof that CI passed. Never disable a test, relax assertions, or suppress failures solely to get green. If tools cannot run a check, say exactly which check is unverified.
+8. **Handoff evidence:** State the docs and quality rules consulted, changed files, specification impact, exact checks and results, coverage if measured, CI run URL/status, risks, and unverified items. Never claim a quality tier or full coverage without evidence.
+
+Reference links (consult current versions):
+- https://contributors.home-assistant.io/core/
+- https://contributors.home-assistant.io/core/development/tests/
+- https://contributors.home-assistant.io/core/development/testing/
+- https://contributors.home-assistant.io/core/integrations/create/
+- https://contributors.home-assistant.io/core/quality-scale/
+- https://github.com/home-assistant/core/blob/dev/AGENTS.md
+- https://github.com/home-assistant/core/blob/dev/.claude/skills/ha-integration-knowledge/SKILL.md
+- https://pypi.org/project/pytest-homeassistant-custom-component/
+- https://docs.python.org/3/
+- https://docs.pytest.org/
+- https://docs.astral.sh/ruff/
