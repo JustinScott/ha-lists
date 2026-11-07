@@ -233,3 +233,45 @@ other todo entities
 - The initial HA harness covers local configuration entry creation and persistence of selected `todo` entity IDs in options.
 - These checks do not deploy to production, test actual provider task retrieval end-to-end, or replace browser visual testing.
 - The workflow and HA tests must be verified against real GitHub Actions job results before treating them as passing quality gates.
+
+
+## Engineering standards and automated testing acceptance criteria (2026-11-07)
+
+**Scope:** All implementation milestones, CI changes, refactors, bug fixes, and generated code. The companion `AGENTS.md` makes these standards mandatory before committing. These requirements are intended to follow current Home Assistant developer guidance, its repository AI/agent instructions and integration knowledge skill, the custom-component testing framework, and Python best practices; refresh references whenever implementing a change.
+
+### Required source-of-truth hierarchy
+
+- Approved product requirements and security boundaries in this specification remain authoritative for project scope; changes need approval. For implementation details, consult current official Home Assistant contributor documentation, architecture decisions, Core `AGENTS.md` and relevant official AI integration skill, applicable integration quality-scale rules, supported HA APIs, and the framework documentation.
+- Prefer proven Gold/Platinum integrations as implementation examples, but do not copy features irrelevant to Lists. Core-only rules and commands are guidance rather than automatically executable requirements for this HACS custom component. Record conflicts and applicability decisions.
+- Use modern, idiomatic Python: explicit concrete type annotations, simple maintainable modules, predictable exception handling, minimal dependencies, Ruff lint/format, pytest, and async-safe HA patterns. Never block the event loop with synchronous network or disk work; clean up listeners and registered resources on unload.
+
+### Custom-component test framework requirements
+
+- Test against a declared, supported HA version using `pytest-homeassistant-custom-component`, `pytest`, and `pytest-asyncio`. Set `asyncio_mode = "auto"`; ensure the repository root is importable (e.g., `python -m pytest`). Use `enable_custom_integrations` correctly and preserve special fixture setup order.
+- Use `MockConfigEntry` from `pytest_homeassistant_custom_component.common`, not Home Assistant Core's `tests.common` import. Create realistic fake `todo` states and providers. Keep fixtures deterministic, synthetic, and free of production data; colocate `fixtures/` files with tests. Configure the framework-specific Syrupy extension if snapshots are introduced.
+- Exercise integration behavior through HA interfaces: configuration/options flows, config entry setup/unload, HA states/services, authenticated WebSocket clients, and registries when relevant. Pure-logic unit tests are complementary. Source-text contract checks and JavaScript/Python syntax checks alone do not establish runtime correctness.
+- Write typed tests, use parameterization with named cases instead of branching, use `@pytest.mark.usefixtures` for unused fixtures, and avoid fragile time-dependent expectations. Use a freezer fixture for time. Every bug fix must have a regression test that fails without the fix.
+- Test configuration flow success, duplicate abort, validation errors and recovery, options persistence and invalid selection, startup/shutdown, deleted/unavailable lists, provider errors, permission enforcement, malformed WebSocket inputs, asynchronous race handling, and changes to persisted data. Expand tests when new capabilities are introduced; do not prematurely assert support for features not yet implemented.
+- Measure coverage. Target full config-flow coverage (Bronze expectation) and progress toward >95% coverage of each module (Silver expectation); do not label the custom integration as officially HA quality-scale certified. Document any missing coverage and exemptions.
+
+### Translation, security, and release quality gates
+
+- Keep UI-facing messages translatable and validate configuration and options strings. Regenerate/check `translations/en.json` after `strings.json` changes using a documented workflow appropriate for a custom integration; do not assume Home Assistant Core's translation scripts are installed in this repo.
+- Validate authentication and authorization of WebSocket calls, least privilege, no leaked tokens/task data, safe logging, offline/error behavior, local-first operation, compatibility with native `todo` capabilities, and backward-compatible persisted state.
+- Each code change must run or explicitly report as unverified: `ruff check .`, `ruff format --check .`, `python -m pytest -q`, `python -m pytest -q tests_ha`, Python compilation, frontend checks, and feature-specific tests. CI must independently execute the relevant checks. Review actual GitHub Actions job logs and resolve failures before calling a change complete.
+- No tests may be skipped, assertions weakened, or checks removed merely to obtain a green CI run. A commit, workflow trigger, or green lint job does not prove integration tests pass. Never test against production Home Assistant without separate explicit authorization.
+- Each handoff must identify references consulted, spec/agent impact, tests and exact results, coverage when available, the actual CI run and outcome, risks, and any unverified behavior.
+
+### Reference documentation
+
+- Home Assistant contributors: https://contributors.home-assistant.io/core/
+- Integration creation: https://contributors.home-assistant.io/core/integrations/create/
+- Official testing practices: https://contributors.home-assistant.io/core/development/tests/
+- Running tests and coverage: https://contributors.home-assistant.io/core/development/testing/
+- Integration quality scale: https://contributors.home-assistant.io/core/quality-scale/
+- Home Assistant Core AI agent instructions: https://github.com/home-assistant/core/blob/dev/AGENTS.md
+- Home Assistant integration AI knowledge: https://github.com/home-assistant/core/blob/dev/.claude/skills/ha-integration-knowledge/SKILL.md
+- Custom-component test framework: https://pypi.org/project/pytest-homeassistant-custom-component/
+- Python: https://docs.python.org/3/
+- pytest: https://docs.pytest.org/
+- Ruff: https://docs.astral.sh/ruff/
