@@ -128,7 +128,7 @@ class HaListsPanel extends HTMLElement {
         .muted { color:var(--secondary-text-color); }
         .error { color:var(--error-color); }
         form { display:flex; gap:8px; margin:12px 0; }
-        input { flex:1; min-width:0; padding:10px; color:inherit; background:var(--card-background-color); border:1px solid var(--divider-color); border-radius:8px; font:inherit; }
+        ha-input { flex:1; min-width:0; }
         form button { padding:10px 14px; font:inherit; cursor:pointer; }
         li { padding:10px 0; border-bottom:1px solid var(--divider-color); }
         ul { list-style:none; padding:0; }
@@ -144,11 +144,12 @@ class HaListsPanel extends HTMLElement {
       const article = document.createElement("article");
       this._heading = document.createElement("h2");
       this._form = document.createElement("form");
-      this._input = document.createElement("input");
-      this._input.type = "text";
-      this._input.placeholder = "Add a task";
-      this._input.setAttribute("aria-label", "New task");
-      this._input.maxLength = 255;
+      // Use Home Assistant's native input component for companion-app focus handling.
+      // ha-input superseded ha-textfield in HA 2026.4.
+      this._input = document.createElement("ha-input");
+      this._input.setAttribute("type", "text");
+      this._input.setAttribute("label", "Add a task");
+      this._input.setAttribute("maxlength", "255");
       this._input.addEventListener("input", () => { this._draft = this._input.value; });
       this._submit = document.createElement("button");
       this._submit.type = "submit";
