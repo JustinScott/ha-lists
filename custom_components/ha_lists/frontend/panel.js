@@ -112,95 +112,107 @@ class HaListsPanel extends HTMLElement {
 
   render() {
     if (!this.shadowRoot) return;
-    // Preserve the actual focused input node while the Android keyboard is open.
-    // Replacing the shadow DOM dismisses the keyboard even when the value is saved.
-    const focused = this.shadowRoot.activeElement;
-    if (focused?.matches?.('input[aria-label="New task"]') && !this._adding) return;
-    const style = document.createElement("style");
-    style.textContent = `
-      :host { display:block; color:var(--primary-text-color); font-family:var(--paper-font-body1_-_font-family,sans-serif); }
-      main { max-width:1200px; margin:auto; padding:24px; }
-      h1 { margin:0 0 20px; font-size:26px; }
-      .layout { display:grid; grid-template-columns:minmax(220px,290px) minmax(0,1fr); gap:18px; }
-      nav,article { padding:18px; background:var(--card-background-color); border:1px solid var(--divider-color); border-radius:12px; }
-      nav button { display:block; width:100%; border:0; border-radius:8px; background:transparent; color:inherit; text-align:left; font:inherit; padding:12px; cursor:pointer; overflow-wrap:anywhere; }
-      nav button[aria-current=true] { background:var(--secondary-background-color); font-weight:600; }
-      button:focus-visible { outline:2px solid var(--primary-color); }
-      .muted { color:var(--secondary-text-color); }
-      .error { color:var(--error-color); }
-      form { display:flex; gap:8px; margin:12px 0; }\n      input { flex:1; min-width:0; padding:10px; color:inherit; background:var(--card-background-color); border:1px solid var(--divider-color); border-radius:8px; font:inherit; }\n      form button { padding:10px 14px; font:inherit; cursor:pointer; }\n      li { padding:10px 0; border-bottom:1px solid var(--divider-color); }
-      ul { list-style:none; padding:0; }
-      @media(max-width:650px) { main { padding:12px; } .layout { grid-template-columns:1fr; } }
-    `;
-    const main = document.createElement("main");
-    const h1 = document.createElement("h1");
-    h1.textContent = "Lists";
-    main.append(h1);
-    const layout = document.createElement("div");
-    layout.className = "layout";
-    const nav = document.createElement("nav");
-    nav.setAttribute("aria-label", "Configured to-do lists");
+    // Construct the form once. Never detach or replace its input during updates:
+    // Android WebView dismisses the keyboard when a focused input is removed.
+    if (!this._main) {
+      const style = document.createElement("style");
+      style.textContent = `
+        :host { display:block; color:var(--primary-text-color); font-family:sans-serif; }
+        main { max-width:1200px; margin:auto; padding:24px; }
+        h1 { margin:0 0 20px; font-size:26px; }
+        .layout { display:grid; grid-template-columns:minmax(220px,290px) minmax(0,1fr); gap:18px; }
+        nav,article { padding:18px; background:var(--card-background-color); border:1px solid var(--divider-color); border-radius:12px; }
+        nav button { display:block; width:100%; border:0; border-radius:8px; background:transparent; color:inherit; text-align:left; font:inherit; padding:12px; cursor:pointer; overflow-wrap:anywhere; }
+        nav button[aria-current=true] { background:var(--secondary-background-color); font-weight:600; }
+        button:focus-visible { outline:2px solid var(--primary-color); }
+        .muted { color:var(--secondary-text-color); }
+        .error { color:var(--error-color); }
+        form { display:flex; gap:8px; margin:12px 0; }
+        input { flex:1; min-width:0; padding:10px; color:inherit; background:var(--card-background-color); border:1px solid var(--divider-color); border-radius:8px; font:inherit; }
+        form button { padding:10px 14px; font:inherit; cursor:pointer; }
+        li { padding:10px 0; border-bottom:1px solid var(--divider-color); }
+        ul { list-style:none; padding:0; }
+        @media(max-width:650px) { main { padding:12px; } .layout { grid-template-columns:1fr; } }
+      `;
+      this._main = document.createElement("main");
+      const h1 = document.createElement("h1");
+      h1.textContent = "Lists";
+      const layout = document.createElement("div");
+      layout.className = "layout";
+      this._nav = document.createElement("nav");
+      this._nav.setAttribute("aria-label", "Configured to-do lists");
+      const article = document.createElement("article");
+      this._heading = document.createElement("h2");
+      this._form = document.createElement("form");
+      this._input = document.createElement("input");
+      this._input.type = "text";
+      this._input.placeholder = "Add a task";
+      this._input.setAttribute("aria-label", "New task");
+      this._input.maxLength = 255;
+      this._input.addEventListener("input", () => { this._draft = this._input.value; });
+      this._submit = document.createElement("button");
+      this._submit.type = "submit";
+      this._form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        this._draft = this._input.value;
+        this.addItem();
+      });
+      this._form.append(this._input, this._submit);
+      this._results = document.createElement("div");
+      this._note = document.createElement("p");
+      this._note.className = "muted";
+      this._note.textContent = "Task creation is available. Editing, completion and rich metadata are coming later.";
+      article.append(this._heading, this._form, this._results, this._note);
+      layout.append(this._nav, article);
+      this._main.append(h1, layout);
+      this.shadowRoot.replaceChildren(style, this._main);
+    }
+    const entities = this.availableLists;
+    const selected = entities.find((entity) => entity.entity_id === this._selected);
     const navTitle = document.createElement("strong");
     navTitle.textContent = "My lists";
-    nav.append(navTitle);
-    for (const entity of this.availableLists) {
+    const navChildren = [navTitle];
+    for (const entity of entities) {
       const button = document.createElement("button");
       button.type = "button";
       button.textContent = entity.attributes?.friendly_name || entity.entity_id;
       button.setAttribute("aria-current", String(entity.entity_id === this._selected));
       button.addEventListener("click", () => { this._selected = entity.entity_id; this.loadItems(); });
-      nav.append(button);
+      navChildren.push(button);
     }
     if (this._configured?.length === 0) {
       const p = document.createElement("p");
       p.className = "muted";
       p.textContent = "No lists selected. Open Settings → Devices & services → HA Lists → Configure to choose lists.";
-      nav.append(p);
+      navChildren.push(p);
     }
-    const article = document.createElement("article");
-    const selected = this.availableLists.find((entity) => entity.entity_id === this._selected);
-    const heading = document.createElement("h2");
-    heading.textContent = selected?.attributes?.friendly_name || "Select a list";
-    article.append(heading);
-    if (selected) {
-      const form = document.createElement("form");
-      const input = document.createElement("input");
-      input.type = "text";
-      input.placeholder = "Add a task";
-      input.setAttribute("aria-label", "New task");
-      input.maxLength = 255;
-      input.value = this._draft;
-      input.disabled = this._adding || this._loading || selected.state === "unavailable";
-      input.addEventListener("input", () => { this._draft = input.value; });
-      input.addEventListener("blur", () => { this.render(); });
-      const button = document.createElement("button");
-      button.type = "submit";
-      button.textContent = this._adding ? "Adding…" : "Add";
-      button.disabled = input.disabled;
-      form.addEventListener("submit", (event) => {
-        event.preventDefault();
-        this._draft = input.value;
-        this.addItem();
-      });
-      form.append(input, button);
-      article.append(form);
+    this._nav.replaceChildren(...navChildren);
+    this._heading.textContent = selected?.attributes?.friendly_name || "Select a list";
+    this._form.hidden = !selected;
+    this._input.disabled = this._adding || this._loading || selected?.state === "unavailable";
+    this._submit.disabled = this._input.disabled;
+    this._submit.textContent = this._adding ? "Adding…" : "Add";
+    // Keep the live input value and caret intact while it has focus.
+    if (this.shadowRoot.activeElement !== this._input && this._input.value !== this._draft) {
+      this._input.value = this._draft;
     }
+    const results = [];
     if (this._loading) {
       const p = document.createElement("p");
       p.textContent = "Loading tasks…";
-      article.append(p);
+      results.push(p);
     } else if (this._error) {
       const p = document.createElement("p");
       p.className = "error";
       p.setAttribute("role", "alert");
       p.textContent = this._error;
-      article.append(p);
+      results.push(p);
     } else if (selected) {
       if (!this._items.length) {
         const p = document.createElement("p");
         p.className = "muted";
         p.textContent = "No tasks found.";
-        article.append(p);
+        results.push(p);
       } else {
         const list = document.createElement("ul");
         for (const item of this._items) {
@@ -208,16 +220,10 @@ class HaListsPanel extends HTMLElement {
           li.textContent = (item.status === "completed" ? "✓ " : "○ ") + (item.summary || "Untitled task");
           list.append(li);
         }
-        article.append(list);
+        results.push(list);
       }
     }
-    const note = document.createElement("p");
-    note.className = "muted";
-    note.textContent = "Task creation is available. Editing, completion and rich metadata are coming later.";
-    article.append(note);
-    layout.append(nav, article);
-    main.append(layout);
-    this.shadowRoot.replaceChildren(style, main);
+    this._results.replaceChildren(...results);
   }
 }
 if (!customElements.get("ha-lists-panel")) {
