@@ -150,6 +150,30 @@ class HaListsPanel extends HTMLElement {
       this._input.setAttribute("type", "text");
       this._input.setAttribute("label", "Add a task");
       this._input.setAttribute("maxlength", "255");
+      this._input.setAttribute("enterkeyhint", "done");
+      // Handle Enter explicitly: ha-input's native field lives in its own shadow DOM,
+      // so relying on the surrounding form's implicit submit is unreliable on Android.
+      const submitOnEnter = (event) => {
+        if (event.key !== "Enter" || event.isComposing || event.repeat) return;
+        event.preventDefault();
+        event.stopPropagation();
+        this._draft = this._input.value;
+        this.addItem();
+      };
+      this._input.addEventListener("keydown", submitOnEnter);
+      // Some HA input implementations stop keyboard events inside their shadow root.
+      // Bind to the native input as well, without double-handling a single event.
+      const bindNativeEnter = () => {
+        const nativeInput = this._input.shadowRoot?.querySelector("input");
+        if (nativeInput && nativeInput !== this._nativeInput) {
+          this._nativeInput = nativeInput;
+          nativeInput.addEventListener("keydown", submitOnEnter);
+        }
+      };
+      this._input.updateComplete?.then(bindNativeEnter);
+      customElements.whenDefined("ha-input").then(() => {
+        this._input.updateComplete?.then(bindNativeEnter);
+      });
       this._input.addEventListener("input", () => { this._draft = this._input.value; });
       this._submit = document.createElement("button");
       this._submit.type = "submit";
