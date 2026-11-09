@@ -172,6 +172,15 @@ other todo entities
 6. **Provider portability (Option A):** adapter hardening, safe rebinding, capability checks, conflict handling and validation against a second provider. Full migration preview/export/import is deferred to a separately approved future milestone (Option B).
 7. **Polish/release:** accessibility, Android testing, performance, documentation, HACS distribution and release checklist.
 
+### Milestone 2 — task-entry UX acceptance criteria (approved 2026-11-09)
+
+- Task entry must work in the Home Assistant Android companion app as well as Chrome, Firefox, and desktop browsers. Use a compatible Home Assistant input component (currently `ha-input`); avoid unmounting or replacing the active input during asynchronous updates, which can dismiss the Android keyboard.
+- Pressing **Enter/Done** in the task input and activating **Add** must each submit the current item exactly once through the configured native `todo` entity.
+- **After a successful add**, clear the input, keep or restore focus to the task-entry field, and keep the Android soft keyboard available for immediate entry of the next item without another tap. This applies to both Enter and Add-button submission.
+- On failure, preserve the unsent draft and show a clear error. Do not steal focus when navigating away or changing lists while a submission is pending. Handle IME composition, pending submissions, and duplicate-submit prevention.
+- Regression-test keyboard focus, consecutive additions, and submission in the Android companion app where feasible. The browser-only pass does not establish Android-app compatibility.
+- Track implementation in [GitHub issue #1](https://github.com/JustinScott/ha-lists/issues/1). This is a **Milestone 2 core task-entry requirement**, to complete before expanding to task completion/editing. The issue is not itself evidence that the behavior is implemented.
+
 ## 12. Approved architecture decisions and open implementation details
 
 **Approved:** Extended task data and suggestion history reside in Home Assistant-managed local storage. Initial provider portability is Option A (rebind without task migration). Option B remains a documented future goal, not an initial-release requirement. Package as one HACS-compatible custom integration with a bundled dedicated frontend panel; no standalone server or add-on is required.
