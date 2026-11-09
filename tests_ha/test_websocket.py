@@ -42,3 +42,23 @@ def test_lists_command_rejects_unexpected_type():
         pytest.skip("HA's websocket decorator does not expose its schema")
     with pytest.raises(vol.Invalid):
         schema({"id": 1, "type": "ha_lists/not_lists"})
+
+
+async def test_non_admin_receives_only_configured_entity_ids(hass):
+    """The non-admin panel exposes configured IDs, never task contents."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="HA Lists",
+        data={},
+        options={"lists": ["todo.example"]},
+    )
+    entry.add_to_hass(hass)
+    connection = MagicMock()
+    connection.user.is_admin = False
+
+    await ws_lists(hass, connection, {"id": 9, "type": "ha_lists/lists"})
+
+    connection.send_result.assert_called_once_with(
+        9, {"lists": ["todo.example"]}
+    )
+    connection.send_error.assert_not_called()
