@@ -112,6 +112,10 @@ class HaListsPanel extends HTMLElement {
 
   render() {
     if (!this.shadowRoot) return;
+    // Preserve the actual focused input node while the Android keyboard is open.
+    // Replacing the shadow DOM dismisses the keyboard even when the value is saved.
+    const focused = this.shadowRoot.activeElement;
+    if (focused?.matches?.('input[aria-label="New task"]') && !this._adding) return;
     const style = document.createElement("style");
     style.textContent = `
       :host { display:block; color:var(--primary-text-color); font-family:var(--paper-font-body1_-_font-family,sans-serif); }
@@ -168,6 +172,7 @@ class HaListsPanel extends HTMLElement {
       input.value = this._draft;
       input.disabled = this._adding || this._loading || selected.state === "unavailable";
       input.addEventListener("input", () => { this._draft = input.value; });
+      input.addEventListener("blur", () => { this.render(); });
       const button = document.createElement("button");
       button.type = "submit";
       button.textContent = this._adding ? "Adding…" : "Add";
