@@ -1,4 +1,4 @@
-/** Lists panel: selected provider discovery and read-only task retrieval. */
+/** Lists panel: selected provider discovery and task retrieval and native todo item creation. */
 class HaListsPanel extends HTMLElement {
   constructor() {
     super();
@@ -10,6 +10,8 @@ class HaListsPanel extends HTMLElement {
     this._items = [];
     this._error = "";
     this._loading = false;
+    this._adding = false;
+    this._draft = "";
     this._requestId = 0;
   }
 
@@ -82,6 +84,31 @@ class HaListsPanel extends HTMLElement {
     }
   }
 
+  async addItem() {
+    const entityId = this._selected;
+    const item = this._draft.trim();
+    if (!entityId || !item || this._adding || this._loading) return;
+    if (!this.availableLists.some((entity) => entity.entity_id === entityId)) return;
+    this._adding = true;
+    this._error = "";
+    this.render();
+    try {
+      await this._hass.callService("todo", "add_item", {
+        entity_id: entityId,
+        item
+      });
+      if (this._selected === entityId) {
+        this._draft = "";
+        await this.loadItems();
+      }
+    } catch (error) {
+      this._error = "Unable to add task: " + String(error);
+    } finally {
+      this._adding = false;
+      this.render();
+    }
+  }
+
   render() {
     if (!this.shadowRoot) return;
     const style = document.createElement("style");
@@ -96,7 +123,7 @@ class HaListsPanel extends HTMLElement {
       button:focus-visible { outline:2px solid var(--primary-color); }
       .muted { color:var(--secondary-text-color); }
       .error { color:var(--error-color); }
-      li { padding:10px 0; border-bottom:1px solid var(--divider-color); }
+      form { display:flex; gap:8px; margin:12px 0; }\n      input { flex:1; min-width:0; padding:10px; color:inherit; background:var(--card-background-color); border:1px solid var(--divider-color); border-radius:8px; font:inherit; }\n      form button { padding:10px 14px; font:inherit; cursor:pointer; }\n      li { padding:10px 0; border-bottom:1px solid var(--divider-color); }
       ul { list-style:none; padding:0; }
       @media(max-width:650px) { main { padding:12px; } .layout { grid-template-columns:1fr; } }
     `;
@@ -130,6 +157,28 @@ class HaListsPanel extends HTMLElement {
     const heading = document.createElement("h2");
     heading.textContent = selected?.attributes?.friendly_name || "Select a list";
     article.append(heading);
+    if (selected) {
+      const form = document.createElement("form");
+      const input = document.createElement("input");
+      input.type = "text";
+      input.placeholder = "Add a task";
+      input.setAttribute("aria-label", "New task");
+      input.maxLength = 255;
+      input.value = this._draft;
+      input.disabled = this._adding || this._loading || selected.state === "unavailable";
+      input.addEventListener("input", () => { this._draft = input.value; });
+      const button = document.createElement("button");
+      button.type = "submit";
+      button.textContent = this._adding ? "Adding…" : "Add";
+      button.disabled = input.disabled;
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        this._draft = input.value;
+        this.addItem();
+      });
+      form.append(input, button);
+      article.append(form);
+    }
     if (this._loading) {
       const p = document.createElement("p");
       p.textContent = "Loading tasks…";
@@ -158,7 +207,7 @@ class HaListsPanel extends HTMLElement {
     }
     const note = document.createElement("p");
     note.className = "muted";
-    note.textContent = "Read-only preview. Editing and rich task metadata are coming later.";
+    note.textContent = "Task creation is available. Editing, completion and rich metadata are coming later.";
     article.append(note);
     layout.append(nav, article);
     main.append(layout);
