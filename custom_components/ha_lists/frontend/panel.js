@@ -100,7 +100,12 @@ class HaListsPanel extends HTMLElement {
       });
       if (this._selected === entityId) {
         this._draft = "";
+        // Clear and refocus immediately, before the asynchronous list refresh.
+        // The input must remain enabled: disabling it dismisses Android's IME.
+        this._input.value = "";
+        this._input.focus();
         await this.loadItems();
+        if (this._selected === entityId && this.isConnected) this._input.focus();
       }
     } catch (error) {
       this._error = "Unable to add task: " + String(error);
@@ -154,7 +159,7 @@ class HaListsPanel extends HTMLElement {
       // Handle Enter explicitly: ha-input's native field lives in its own shadow DOM,
       // so relying on the surrounding form's implicit submit is unreliable on Android.
       const submitOnEnter = (event) => {
-        if (event.key !== "Enter" || event.isComposing || event.repeat) return;
+        if (event.key !== "Enter" || event.isComposing || event.repeat || event.defaultPrevented) return;
         event.preventDefault();
         event.stopPropagation();
         this._draft = this._input.value;
@@ -214,8 +219,10 @@ class HaListsPanel extends HTMLElement {
     this._nav.replaceChildren(...navChildren);
     this._heading.textContent = selected?.attributes?.friendly_name || "Select a list";
     this._form.hidden = !selected;
-    this._input.disabled = this._adding || this._loading || selected?.state === "unavailable";
-    this._submit.disabled = this._input.disabled;
+    // Do not disable the focused input during a write or refresh: on Android
+    // that blurs the native field and closes the soft keyboard.
+    this._input.disabled = !selected || selected.state === "unavailable";
+    this._submit.disabled = this._adding || this._loading || this._input.disabled;
     this._submit.textContent = this._adding ? "Adding…" : "Add";
     // Keep the live input value and caret intact while it has focus.
     if (this.shadowRoot.activeElement !== this._input && this._input.value !== this._draft) {
