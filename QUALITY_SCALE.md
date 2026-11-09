@@ -9,7 +9,7 @@ Official reference: https://developers.home-assistant.io/docs/core/integration-q
 - [x] Duplicate configuration is rejected (tests_ha/test_config_flow.py).
 - [x] Options flow stores selected native todo entities (tests_ha/test_config_flow.py).
 - [ ] Validate setup and failure behavior using HA fixtures.
-- [ ] Verify WebSocket authentication/authorization and invalid payload rejection.
+- [ ] Verify WebSocket authentication/authorization and invalid payload rejection.\n  - Follow-up TODO: add end-to-end authenticated WebSocket tests with HA connection fixtures, including unauthenticated rejection, non-admin permissions, entity visibility, and malformed payloads. Existing direct-handler tests are not sufficient; do not mark complete.
 - [ ] Document installation, removal, supported features and limitations.
 - [ ] Review all other applicable current Bronze rules; record explicit exemptions.
 
