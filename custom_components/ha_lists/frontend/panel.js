@@ -20,9 +20,10 @@ class HaListsPanel extends HTMLElement {
     if (value?.connection && value.connection !== this._connection) {
       this._connection = value.connection;
       this.loadConfiguration();
-    } else {
-      this.render();
     }
+    // HA updates `hass` frequently. Replacing the focused input on every
+    // state update dismisses mobile keyboards and interrupts text entry.
+    // Configuration changes and task actions render explicitly instead.
   }
 
   set panel(value) { this._panel = value; }
