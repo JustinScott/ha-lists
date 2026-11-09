@@ -13,6 +13,7 @@ class HaListsPanel extends HTMLElement {
     this._adding = false;
     this._draft = "";
     this._requestId = 0;
+    this._updatingItems = new Set();
   }
 
   set hass(value) {
@@ -115,6 +116,35 @@ class HaListsPanel extends HTMLElement {
     }
   }
 
+  async setItemCompleted(item, completed) {
+    const entityId = this._selected;
+    const itemId = item.uid || item.summary;
+    const key = entityId + ":" + itemId;
+    if (!entityId || !itemId || this._updatingItems.has(key)) return;
+    this._updatingItems.add(key);
+    this._error = "";
+    // Optimistic update, rolled back on service failure.
+    const previousStatus = item.status;
+    item.status = completed ? "completed" : "needs_action";
+    this.render();
+    try {
+      await this._hass.callService("todo", "update_item", {
+        entity_id: entityId,
+        item: itemId,
+        status: item.status
+      });
+      if (this._selected === entityId) await this.loadItems();
+    } catch (error) {
+      item.status = previousStatus;
+      if (this._selected === entityId) {
+        this._error = "Unable to update task: " + String(error);
+      }
+    } finally {
+      this._updatingItems.delete(key);
+      this.render();
+    }
+  }
+
   render() {
     if (!this.shadowRoot) return;
     // Construct the form once. Never detach or replace its input during updates:
@@ -135,7 +165,9 @@ class HaListsPanel extends HTMLElement {
         form { display:flex; gap:8px; margin:12px 0; }
         ha-input { flex:1; min-width:0; }
         form button { padding:10px 14px; font:inherit; cursor:pointer; }
-        li { padding:10px 0; border-bottom:1px solid var(--divider-color); }
+        li { padding:10px 0; border-bottom:1px solid var(--divider-color); display:flex; align-items:center; gap:12px; }
+        li input[type=checkbox] { width:22px; height:22px; flex:none; accent-color:var(--primary-color); }
+        li .completed { text-decoration:line-through; color:var(--secondary-text-color); }
         ul { list-style:none; padding:0; }
         @media(max-width:650px) { main { padding:12px; } .layout { grid-template-columns:1fr; } }
       `;
@@ -191,7 +223,7 @@ class HaListsPanel extends HTMLElement {
       this._results = document.createElement("div");
       this._note = document.createElement("p");
       this._note.className = "muted";
-      this._note.textContent = "Task creation is available. Editing, completion and rich metadata are coming later.";
+      this._note.textContent = "Add and complete tasks here. Editing and rich metadata are coming later.";
       article.append(this._heading, this._form, this._results, this._note);
       layout.append(this._nav, article);
       this._main.append(h1, layout);
@@ -247,9 +279,22 @@ class HaListsPanel extends HTMLElement {
         results.push(p);
       } else {
         const list = document.createElement("ul");
-        for (const item of this._items) {
+        const sorted = [...this._items].sort((a, b) =>
+          Number(a.status === "completed") - Number(b.status === "completed")
+        );
+        for (const item of sorted) {
           const li = document.createElement("li");
-          li.textContent = (item.status === "completed" ? "✓ " : "○ ") + (item.summary || "Untitled task");
+          const checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          checkbox.checked = item.status === "completed";
+          const itemId = item.uid || item.summary;
+          checkbox.disabled = !itemId || this._updatingItems.has(this._selected + ":" + itemId);
+          checkbox.setAttribute("aria-label", (checkbox.checked ? "Reopen " : "Complete ") + (item.summary || "Untitled task"));
+          checkbox.addEventListener("change", () => this.setItemCompleted(item, checkbox.checked));
+          const label = document.createElement("span");
+          label.textContent = item.summary || "Untitled task";
+          if (checkbox.checked) label.className = "completed";
+          li.append(checkbox, label);
           list.append(li);
         }
         results.push(list);
