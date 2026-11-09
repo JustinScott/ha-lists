@@ -172,6 +172,15 @@ other todo entities
 6. **Provider portability (Option A):** adapter hardening, safe rebinding, capability checks, conflict handling and validation against a second provider. Full migration preview/export/import is deferred to a separately approved future milestone (Option B).
 7. **Polish/release:** accessibility, Android testing, performance, documentation, HACS distribution and release checklist.
 
+### Milestone 2 — task completion and reopening (implementation pending verification, 2026-11-09)
+
+- Each task row has an accessible, touch-friendly checkbox to complete or reopen it.
+- Completed tasks appear below active tasks, with their titles struck through; preserve original relative order within each group.
+- Use native `todo.update_item` with the provider's stable item UID where available, falling back to summary only when needed. Respect provider capability and error responses.
+- Prevent duplicate updates while an item change is pending, and restore the prior displayed status if the update fails.
+- Verify both directions against a Local To-do entity and in the Android companion app; add regression tests for status updates, failures, sorting, and repeated taps.
+- Implementation started in commit `7fe7aa3`; this is **not yet user-verified or release-ready**.
+
 ### Milestone 2 — task-entry UX acceptance criteria (approved 2026-11-09)
 
 - Task entry must work in the Home Assistant Android companion app as well as Chrome, Firefox, and desktop browsers. Use a compatible Home Assistant input component (currently `ha-input`); avoid unmounting or replacing the active input during asynchronous updates, which can dismiss the Android keyboard.
