@@ -74,7 +74,9 @@ async def test_repeated_setup_registers_resources_once(hass):
     entry = MockConfigEntry(domain=DOMAIN, title="HA Lists", data={})
     entry.add_to_hass(hass)
     with (
-        patch(\n            "custom_components.ha_lists.websocket_api.async_register_command"\n        ) as command,
+        patch(
+            "custom_components.ha_lists.websocket_api.async_register_command"
+        ) as command,
         patch(
             "custom_components.ha_lists.panel_custom.async_register_panel",
             new_callable=AsyncMock,
@@ -97,7 +99,9 @@ async def test_unload_and_setup_again(hass):
     entry = MockConfigEntry(domain=DOMAIN, title="HA Lists", data={})
     entry.add_to_hass(hass)
     with (
-        patch("custom_components.ha_lists.websocket_api.async_register_command") as command,
+        patch(
+            "custom_components.ha_lists.websocket_api.async_register_command"
+        ) as command,
         patch(
             "custom_components.ha_lists.panel_custom.async_register_panel",
             new_callable=AsyncMock,
