@@ -301,3 +301,10 @@ other todo entities
 - Python: https://docs.python.org/3/
 - pytest: https://docs.pytest.org/
 - Ruff: https://docs.astral.sh/ruff/
+
+### CI baseline follow-up (2026-11-09)
+
+- Push and pull-request validation runs regular Python unit/contract tests in a dedicated `pytest-unit` job, separate from Home Assistant fixture tests. Manual `pytest` runs both suites. A skipped job in an older workflow did not mean the regular tests were absent: they previously ran inside `lint-and-contracts`.
+- CI also runs Ruff lint/format, frontend JavaScript syntax and DOM behavior tests, HA integration tests, coverage reporting, Hassfest, and HACS validation. A full-run secret scan uses Gitleaks; pull requests also run dependency review. `.pre-commit-config.yaml` supplies local Ruff, formatting, basic file validation and private-key checks.
+- **Verification pending:** The newly added security jobs and separate unit-test job must be confirmed in a new GitHub Actions run. Do not describe the updated pipeline as green until observed.
+- **Outstanding testing work:** Add genuine authenticated WebSocket permission/invalid-payload tests; broaden setup/reload/partial-failure and provider error/concurrency tests as features arrive; add frontend accessibility/keyboard and Android acceptance verification. Coverage has no enforced minimum yet; choose a meaningful threshold after reviewing baseline results. Translation validation currently checks JSON structure, not completeness. A passing CI run does not imply Bronze IQS readiness or feature completeness.
