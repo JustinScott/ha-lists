@@ -21,8 +21,9 @@ async def test_lists_returns_selected_entities(hass):
     entry.add_to_hass(hass)
     connection = MagicMock()
 
-    await ws_lists(hass, connection, {"id": 7, "type": "ha_lists/lists"})
+    ws_lists(hass, connection, {"id": 7, "type": "ha_lists/lists"})
 
+    await hass.async_block_till_done()
     connection.send_result.assert_called_once_with(
         7, {"lists": ["todo.groceries", "todo.hardware"]}
     )
@@ -31,14 +32,15 @@ async def test_lists_returns_selected_entities(hass):
 async def test_lists_returns_empty_when_not_configured(hass):
     """No config entry means no configured lists."""
     connection = MagicMock()
-    await ws_lists(hass, connection, {"id": 8, "type": "ha_lists/lists"})
+    ws_lists(hass, connection, {"id": 8, "type": "ha_lists/lists"})
+    await hass.async_block_till_done()
     connection.send_result.assert_called_once_with(8, {"lists": []})
 
 
 def test_lists_command_rejects_unexpected_type():
     """The command schema rejects an unrelated WebSocket message type."""
     schema = ws_lists.__dict__.get("_ws_schema")
-    if schema is None:
+    if not callable(schema):
         pytest.skip("HA's websocket decorator does not expose its schema")
     with pytest.raises(vol.Invalid):
         schema({"id": 1, "type": "ha_lists/not_lists"})
@@ -56,9 +58,8 @@ async def test_non_admin_receives_only_configured_entity_ids(hass):
     connection = MagicMock()
     connection.user.is_admin = False
 
-    await ws_lists(hass, connection, {"id": 9, "type": "ha_lists/lists"})
+    ws_lists(hass, connection, {"id": 9, "type": "ha_lists/lists"})
 
-    connection.send_result.assert_called_once_with(
-        9, {"lists": ["todo.example"]}
-    )
+    await hass.async_block_till_done()
+    connection.send_result.assert_called_once_with(9, {"lists": ["todo.example"]})
     connection.send_error.assert_not_called()
