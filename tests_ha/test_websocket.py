@@ -119,16 +119,13 @@ async def test_non_admin_only_sees_authorized_entities(hass):
     entry.add_to_hass(hass)
     connection = MagicMock()
     connection.user.is_admin = False
-    connection.user.permissions.check_entity.side_effect = (
-        lambda entity_id, policy: policy == POLICY_READ
-        and entity_id == "todo.allowed"
+    connection.user.permissions.check_entity.side_effect = lambda entity_id, policy: (
+        policy == POLICY_READ and entity_id == "todo.allowed"
     )
 
     ws_lists(hass, connection, {"id": 10, "type": "ha_lists/lists"})
     await hass.async_block_till_done()
-    connection.send_result.assert_called_once_with(
-        10, {"lists": ["todo.allowed"]}
-    )
+    connection.send_result.assert_called_once_with(10, {"lists": ["todo.allowed"]})
     connection.user.permissions.check_entity.assert_any_call(
         "todo.restricted", POLICY_READ
     )
