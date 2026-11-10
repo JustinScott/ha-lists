@@ -95,7 +95,7 @@ test("Add button submits through native service and clears input", async () => {
   panel._form.dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
   await tick(); await tick();
   assert.equal(calls.length, 1);
-  assert.deepEqual(calls[0], { domain: "todo", action: "add_item", data: { entity_id: "todo.groceries", item: "Eggs" } });
+  assert.deepEqual(JSON.parse(JSON.stringify(calls[0])), { domain: "todo", action: "add_item", data: { entity_id: "todo.groceries", item: "Eggs" } });
   assert.equal(panel._input.value, "");
 });
 
@@ -130,7 +130,7 @@ test("completion sends UID, sorts completed last and strikes title", async () =>
   ] });
   change(window, rows(panel)[0].querySelector("input"), true);
   await tick(); await tick();
-  assert.deepEqual(calls[0], { domain: "todo", action: "update_item", data: { entity_id: "todo.groceries", item: "a", status: "completed" } });
+  assert.deepEqual(JSON.parse(JSON.stringify(calls[0])), { domain: "todo", action: "update_item", data: { entity_id: "todo.groceries", item: "a", status: "completed" } });
   assert.deepEqual(rows(panel).map((row) => row.textContent), ["Bread", "Apples"]);
   assert.equal(rows(panel)[1].querySelector("span").className, "completed");
 });
