@@ -19,9 +19,7 @@ async def test_setup_and_unload_panel(hass):
     entry.add_to_hass(hass)
 
     with (
-        patch(
-            "custom_components.ha_lists.websocket_api.async_register_command"
-        ) as register_command,
+        patch("custom_components.ha_lists.websocket_api.async_register_command") as register_command,
         patch(
             "custom_components.ha_lists.panel_custom.async_register_panel",
             new_callable=AsyncMock,
@@ -49,7 +47,9 @@ async def test_setup_failure_does_not_mark_loaded(hass):
         patch("custom_components.ha_lists.websocket_api.async_register_command"),
         patch.object(hass, "http", SimpleNamespace(async_register_static_paths=AsyncMock())),
     ):
-        hass.http.async_register_static_paths.side_effect = RuntimeError("synthetic static-path failure")
+        hass.http.async_register_static_paths.side_effect = RuntimeError(
+            "synthetic static-path failure"
+        )
         try:
             await async_setup_entry(hass, entry)
         except RuntimeError as err:
