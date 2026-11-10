@@ -27,10 +27,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: python -m pip install ruff pytest
+      - run: python -m pip install ruff
       - run: ruff check .
       - run: ruff format --check .
-      - run: pytest -q
       - run: python -m compileall -q custom_components
       - run: node --check custom_components/ha_lists/frontend/panel.js
   home-assistant:
@@ -75,7 +74,7 @@ jobs:
           category: integration
           comment: 'false'
   pytest-unit:
-    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'pytest'
+    if: github.event_name != 'workflow_dispatch' || inputs.suite == 'all' || inputs.suite == 'pytest'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
