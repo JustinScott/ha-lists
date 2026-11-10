@@ -23,7 +23,7 @@ When guidance conflicts with a project decision, explain the conflict and seek a
 ## Engineering and change workflow
 1. **Plan:** Read relevant specs and code; check applicable official HA, AI-agent, HACS, and testing guidance. Identify supported APIs, compatibility, risks, and the smallest coherent change.
 2. **Implement:** Prefer clear, idiomatic, maintainable Python/TypeScript and existing project patterns. Avoid premature abstractions, unnecessary dependencies, blocking async calls, and unrelated refactors. Add or update behavioral tests and regression tests for bugs.
-3. **Verify:** Run applicable checks (currently `ruff check .`, `ruff format --check .`, `python -m pytest -q`, `python -m pytest -q tests_ha`, and frontend syntax/build checks). Use the custom-component test framework for HA behavior; source-text checks alone are insufficient. Do not weaken tests to make CI pass.
+3. **Verify:** Run applicable checks (currently `npm run test:all`; use `npm run test:browser` for frontend task mutations and synchronization). Use the custom-component test framework for HA behavior; source-text checks alone are insufficient. Do not weaken tests to make CI pass.
 4. **Review:** Check security, data safety, backward compatibility, HACS packaging/validation, and translation requirements. Update `specs.md` in the same change if requirements, design decisions, or documented behavior change; otherwise state “Spec reviewed; no update required.”
 5. **Report:** Give changed files, relevant guidance consulted, exact test results, CI run/status, remaining risks, and unverified checks. Never claim checks or CI passed until verified. If CI fails, inspect logs and fix the cause before calling the change complete.
 

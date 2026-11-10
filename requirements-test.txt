@@ -1,0 +1,6 @@
+# Keep Local To-do's calendar library aligned with the HA version from pytest-homeassistant-custom-component.
+pytest-homeassistant-custom-component==0.13.316
+home-assistant-frontend==20260128.6
+ical==13.2.0
+pytest-cov==7.0.0
+ruff

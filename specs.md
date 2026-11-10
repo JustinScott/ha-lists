@@ -314,3 +314,10 @@ other todo entities
 - Home Assistant persists the configured list IDs in config-entry options. Native Local To-do persists tasks and their supported fields. The restart test reads both from the same configuration directory in a fresh Home Assistant instance.
 - HA Lists discovery applies the authenticated user's entity read policy. The panel sends task writes through native To-do actions, which enforce entity control permissions. Home Assistant owns the native To-do WebSocket endpoints.
 - Reload restores the panel and reuses the registered HTTP asset and WebSocket command. The open panel refreshes tasks when Home Assistant publishes a changed state for the selected entity, while preserving the draft input. Changes that do not produce an entity state update may require a fresh task request.
+
+### Behavior-first testing workflow
+
+- Prefer public config flows, authenticated WebSocket requests, native To-do actions, and observable panel output. When removing a test, preserve any distinct regression it protects through a stronger scenario.
+- Keep the disk-backed restart scenario and narrowly inject failures or delays where real services cannot produce them deterministically.
+- Run the Python suite once in push CI and publish coverage as a diagnostic report. Keep packaging validation, lint, frontend behavior tests, and secret scanning in push CI.
+- Run the disposable two-client browser smoke test on demand for changes to frontend task mutations or synchronization. Use synthetic data and an isolated Home Assistant configuration. See the README for local and CI entry points.

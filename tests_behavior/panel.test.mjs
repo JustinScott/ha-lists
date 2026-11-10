@@ -11,7 +11,7 @@ const deferred = () => {
   return { promise, resolve, reject };
 };
 
-async function setup({ lists = ["todo.groceries"], items = [], service } = {}) {
+async function setup({ lists = ["todo.groceries"], items = [], service, readItems } = {}) {
   const dom = new JSDOM("<!doctype html><html><body></body></html>", {
     runScripts: "outside-only", pretendToBeVisual: true,
   });
@@ -32,7 +32,9 @@ async function setup({ lists = ["todo.groceries"], items = [], service } = {}) {
       async sendMessagePromise(request) {
         requests.push(request);
         if (request.type === "ha_lists/lists") return { lists };
-        if (request.type === "todo/item/list") return { items: items.map((item) => ({ ...item })) };
+        if (request.type === "todo/item/list") {
+          return { items: await (readItems?.(request.entity_id) ?? items.map((item) => ({ ...item }))) };
+        }
         throw new Error("Unexpected websocket message");
       },
     },
@@ -91,12 +93,13 @@ test("Enter adds once, clears draft and retains input element for consecutive en
 
 test("Add button submits through native service and clears input", async () => {
   const { panel, window, calls } = await setup();
-  panel._input.value = "Eggs";
+  panel._input.value = "  Eggs  ";
   panel._form.dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
   await tick(); await tick();
   assert.equal(calls.length, 1);
   assert.deepEqual(JSON.parse(JSON.stringify(calls[0])), { domain: "todo", action: "add_item", data: { entity_id: "todo.groceries", item: "Eggs" } });
   assert.equal(panel._input.value, "");
+  assert.deepEqual(rows(panel).map((row) => row.textContent), ["Eggs"]);
 });
 
 test("IME composition and repeated Enter do not create extra tasks", async () => {
@@ -229,4 +232,21 @@ test("a delayed response from a previous connection cannot restore its lists", a
   await tick();
   assert.equal(panel.shadowRoot.querySelector("nav button"), null);
   assert.match(panel.shadowRoot.textContent, /No lists selected/);
+});
+
+test("a slow task response cannot overwrite the list the user switched to", async () => {
+  const groceries = deferred();
+  const { panel } = await setup({
+    lists: ["todo.groceries", "todo.hardware"],
+    readItems: (id) => id === "todo.groceries"
+      ? groceries.promise
+      : [{ uid: "screws", summary: "Screws", status: "needs_action" }],
+  });
+  panel.shadowRoot.querySelectorAll("nav button")[1].click();
+  await tick();
+  assert.deepEqual(rows(panel).map((row) => row.textContent), ["Screws"]);
+
+  groceries.resolve([{ uid: "apples", summary: "Apples", status: "needs_action" }]);
+  await tick();
+  assert.deepEqual(rows(panel).map((row) => row.textContent), ["Screws"]);
 });
