@@ -265,13 +265,15 @@ class HaListsPanel extends HTMLElement {
       const p = document.createElement("p");
       p.textContent = "Loading tasks…";
       results.push(p);
-    } else if (this._error) {
+    }
+    if (this._error) {
       const p = document.createElement("p");
       p.className = "error";
       p.setAttribute("role", "alert");
       p.textContent = this._error;
       results.push(p);
-    } else if (selected) {
+    }
+    if (!this._loading && selected) {
       if (!this._items.length) {
         const p = document.createElement("p");
         p.className = "muted";
