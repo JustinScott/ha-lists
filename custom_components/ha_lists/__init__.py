@@ -16,6 +16,7 @@ from .const import DOMAIN
 
 PANEL_PATH = "ha-lists"
 ASSET_URL = "/ha_lists_static"
+ASSETS_REGISTERED = f"{DOMAIN}_assets_registered"
 PANEL_ELEMENT = "ha-lists-panel"
 CONF_LISTS = "lists"
 
@@ -38,8 +39,9 @@ async def ws_lists(
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Register the sidebar and authenticated configuration endpoint."""
-    if not hass.data.get(DOMAIN):
-        websocket_api.async_register_command(hass, ws_lists)
+    if hass.data.get(DOMAIN):
+        return True
+    if not hass.data.get(ASSETS_REGISTERED):
         await hass.http.async_register_static_paths(
             [
                 StaticPathConfig(
@@ -49,16 +51,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 )
             ]
         )
-        await panel_custom.async_register_panel(
-            hass,
-            frontend_url_path=PANEL_PATH,
-            webcomponent_name=PANEL_ELEMENT,
-            sidebar_title="Lists",
-            sidebar_icon="mdi:format-list-checks",
-            module_url=f"{ASSET_URL}/panel.js",
-            require_admin=False,
-        )
-        hass.data[DOMAIN] = True
+        websocket_api.async_register_command(hass, ws_lists)
+        # HTTP routes and WebSocket commands live for the entire HA process.
+        hass.data[ASSETS_REGISTERED] = True
+    await panel_custom.async_register_panel(
+        hass,
+        frontend_url_path=PANEL_PATH,
+        webcomponent_name=PANEL_ELEMENT,
+        sidebar_title="Lists",
+        sidebar_icon="mdi:format-list-checks",
+        module_url=f"{ASSET_URL}/panel.js",
+        require_admin=False,
+    )
+    hass.data[DOMAIN] = True
     return True
 
 

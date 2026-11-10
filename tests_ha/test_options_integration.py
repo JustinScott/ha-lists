@@ -13,8 +13,8 @@ from custom_components.ha_lists.const import DOMAIN
 async def _visible_lists(hass, allowed):
     """Read the configured list IDs as a user with specific read permissions."""
     connection = MagicMock()
-    connection.user.permissions.check_entity.side_effect = (
-        lambda entity_id, policy: policy == POLICY_READ and entity_id in allowed
+    connection.user.permissions.check_entity.side_effect = lambda entity_id, policy: (
+        policy == POLICY_READ and entity_id in allowed
     )
     ws_lists(hass, connection, {"id": 42, "type": "ha_lists/lists"})
     await hass.async_block_till_done()
@@ -38,7 +38,10 @@ async def test_options_updates_are_visible_without_reloading_panel(hass):
     hass.states.async_set("todo.groceries", "0")
     hass.states.async_set("todo.hardware", "0")
     entry = MockConfigEntry(
-        domain=DOMAIN, title="HA Lists", data={}, options={"lists": []},
+        domain=DOMAIN,
+        title="HA Lists",
+        data={},
+        options={"lists": []},
         unique_id=DOMAIN,
     )
     entry.add_to_hass(hass)
@@ -63,7 +66,10 @@ async def test_options_update_never_exposes_unreadable_list(hass):
     hass.states.async_set("todo.allowed", "0")
     hass.states.async_set("todo.private", "0")
     entry = MockConfigEntry(
-        domain=DOMAIN, title="HA Lists", data={}, options={},
+        domain=DOMAIN,
+        title="HA Lists",
+        data={},
+        options={},
         unique_id=DOMAIN,
     )
     entry.add_to_hass(hass)
@@ -73,5 +79,6 @@ async def test_options_update_never_exposes_unreadable_list(hass):
     assert await _visible_lists(hass, {"todo.allowed"}) == ["todo.allowed"]
     assert await _visible_lists(hass, set()) == []
     assert await _visible_lists(hass, {"todo.allowed", "todo.private"}) == [
-        "todo.allowed", "todo.private"
+        "todo.allowed",
+        "todo.private",
     ]

@@ -308,3 +308,9 @@ other todo entities
 - CI also runs Ruff lint/format, frontend JavaScript syntax and DOM behavior tests, HA integration tests, coverage reporting, Hassfest, and HACS validation. A full-run secret scan uses Gitleaks; pull requests also run dependency review. `.pre-commit-config.yaml` supplies local Ruff, formatting, basic file validation and private-key checks.
 - **Verification pending:** The newly added security jobs and separate unit-test job must be confirmed in a new GitHub Actions run. Do not describe the updated pipeline as green until observed.
 - **Outstanding testing work:** Add genuine authenticated WebSocket permission/invalid-payload tests; broaden setup/reload/partial-failure and provider error/concurrency tests as features arrive; add frontend accessibility/keyboard and Android acceptance verification. Coverage has no enforced minimum yet; choose a meaningful threshold after reviewing baseline results. Translation validation currently checks JSON structure, not completeness. A passing CI run does not imply Bronze IQS readiness or feature completeness.
+
+### Persistence, permissions, and state-change regression coverage
+
+- Home Assistant persists the configured list IDs in config-entry options. Native Local To-do persists tasks and their supported fields. The restart test reads both from the same configuration directory in a fresh Home Assistant instance.
+- HA Lists discovery applies the authenticated user's entity read policy. The panel sends task writes through native To-do actions, which enforce entity control permissions. Home Assistant owns the native To-do WebSocket endpoints.
+- Reload restores the panel and reuses the registered HTTP asset and WebSocket command. The open panel refreshes tasks when Home Assistant publishes a changed state for the selected entity, while preserving the draft input. Changes that do not produce an entity state update may require a fresh task request.

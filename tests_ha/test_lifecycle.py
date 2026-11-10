@@ -3,9 +3,12 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+import pytest
+from homeassistant.components.frontend import DATA_PANELS
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.ha_lists import (
+    ASSET_URL,
     PANEL_PATH,
     async_setup_entry,
     async_unload_entry,
@@ -94,8 +97,23 @@ async def test_repeated_setup_registers_resources_once(hass):
         hass.http.async_register_static_paths.assert_awaited_once()
 
 
-async def test_unload_and_setup_again(hass):
-    """Unloading and reloading must restore the panel without duplicates."""
+async def test_config_entry_reload_restores_panel_and_static_asset(hass, hass_client):
+    """A real config entry reload can reuse the registered HTTP route."""
+    entry = MockConfigEntry(domain=DOMAIN, title="HA Lists", data={})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    client = await hass_client()
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    assert PANEL_PATH not in hass.data[DATA_PANELS]
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    assert PANEL_PATH in hass.data[DATA_PANELS]
+    async with client.get(f"{ASSET_URL}/panel.js") as response:
+        assert response.status == 200
+        assert "class HaListsPanel" in await response.text()
+
+
+async def test_panel_registration_failure_can_retry(hass):
+    """A retry after panel setup fails can reuse the registered resources."""
     entry = MockConfigEntry(domain=DOMAIN, title="HA Lists", data={})
     entry.add_to_hass(hass)
     with (
@@ -106,20 +124,20 @@ async def test_unload_and_setup_again(hass):
             "custom_components.ha_lists.panel_custom.async_register_panel",
             new_callable=AsyncMock,
         ) as panel,
-        patch("custom_components.ha_lists.async_remove_panel") as remove_panel,
         patch.object(
             hass,
             "http",
             SimpleNamespace(async_register_static_paths=AsyncMock()),
         ),
     ):
-        assert await async_setup_entry(hass, entry)
-        assert await async_unload_entry(hass, entry)
-        assert await async_unload_entry(hass, entry)
-        remove_panel.assert_called_once_with(hass, PANEL_PATH)
+        panel.side_effect = [RuntimeError("temporary panel failure"), None]
+        with pytest.raises(RuntimeError, match="temporary panel failure"):
+            await async_setup_entry(hass, entry)
+        assert DOMAIN not in hass.data
         assert await async_setup_entry(hass, entry)
         assert panel.await_count == 2
-        assert command.call_count == 2
+        command.assert_called_once()
+        hass.http.async_register_static_paths.assert_awaited_once()
         assert hass.data[DOMAIN] is True
 
 

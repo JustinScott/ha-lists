@@ -17,27 +17,40 @@ class HaListsPanel extends HTMLElement {
   }
 
   set hass(value) {
+    const previous = this._hass;
     this._hass = value;
     if (value?.connection && value.connection !== this._connection) {
       this._connection = value.connection;
+      ++this._requestId;
+      this._configured = null;
+      this._selected = "";
+      this._items = [];
+      this._loading = false;
+      this._error = "";
+      this.render();
       this.loadConfiguration();
+    } else if (this._selected &&
+        previous?.states?.[this._selected] !== value?.states?.[this._selected]) {
+      this.loadItems();
+    } else if (this._configured?.some((id) => previous?.states?.[id] !== value?.states?.[id])) {
+      this.render();
     }
-    // HA updates `hass` frequently. Replacing the focused input on every
-    // state update dismisses mobile keyboards and interrupts text entry.
-    // Configuration changes and task actions render explicitly instead.
   }
 
   set panel(value) { this._panel = value; }
   connectedCallback() { this.render(); }
 
   async loadConfiguration() {
+    const connection = this._connection;
     try {
-      const response = await this._connection.sendMessagePromise({ type: "ha_lists/lists" });
+      const response = await connection.sendMessagePromise({ type: "ha_lists/lists" });
+      if (connection !== this._connection) return;
       this._configured = response.lists || [];
       this._error = "";
       this.render();
       this.selectFirstAvailable();
     } catch (error) {
+      if (connection !== this._connection) return;
       this._error = "Could not load list configuration: " + String(error);
       this._configured = [];
       this.render();

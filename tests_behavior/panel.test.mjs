@@ -187,3 +187,46 @@ test("switching configured lists targets selected entity", async () => {
   await tick();
   assert.equal(calls[0].data.entity_id, "todo.hardware");
 });
+
+test("external To-do changes refresh the selected list and preserve the task draft", async () => {
+  const { panel, window, hass, items, requests } = await setup();
+  const input = panel.shadowRoot.querySelector("ha-input");
+  input.value = "Keep this draft";
+  input.dispatchEvent(new window.Event("input"));
+  const initialRequests = requests.length;
+
+  panel.hass = { ...hass, states: { ...hass.states, "sensor.example": { state: "1" } } };
+  assert.equal(requests.length, initialRequests);
+
+  items.push({ uid: "external", summary: "Added elsewhere", status: "needs_action" });
+  panel.hass = {
+    ...hass,
+    states: {
+      ...hass.states,
+      "todo.groceries": { ...hass.states["todo.groceries"], state: "1" },
+    },
+  };
+  await tick();
+  assert.equal(rows(panel)[0].textContent, "Added elsewhere");
+  assert.equal(panel.shadowRoot.querySelector("ha-input"), input);
+  assert.equal(input.value, "Keep this draft");
+});
+
+test("a delayed response from a previous connection cannot restore its lists", async () => {
+  const { panel, hass } = await setup();
+  const pending = deferred();
+  panel.hass = {
+    ...hass,
+    connection: { sendMessagePromise: () => pending.promise },
+  };
+  assert.equal(panel.shadowRoot.querySelector("nav button"), null);
+  panel.hass = {
+    ...hass,
+    connection: { sendMessagePromise: async () => ({ lists: [] }) },
+  };
+  await tick();
+  pending.resolve({ lists: ["todo.groceries"] });
+  await tick();
+  assert.equal(panel.shadowRoot.querySelector("nav button"), null);
+  assert.match(panel.shadowRoot.textContent, /No lists selected/);
+});
