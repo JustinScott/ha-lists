@@ -63,3 +63,44 @@ async def test_non_admin_receives_only_configured_entity_ids(hass):
     await hass.async_block_till_done()
     connection.send_result.assert_called_once_with(9, {"lists": ["todo.example"]})
     connection.send_error.assert_not_called()
+
+
+async def test_registered_command_uses_authenticated_websocket(hass, hass_ws_client):
+    """Exercise the real HA WebSocket command dispatcher, not just the handler."""
+    from homeassistant.components import websocket_api
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="HA Lists",
+        data={},
+        options={"lists": ["todo.example"]},
+    )
+    entry.add_to_hass(hass)
+    websocket_api.async_register_command(hass, ws_lists)
+    client = await hass_ws_client(hass)
+    await client.send_json({"id": 1, "type": "ha_lists/lists"})
+    response = await client.receive_json()
+    assert response == {
+        "id": 1,
+        "type": "result",
+        "success": True,
+        "result": {"lists": ["todo.example"]},
+    }
+    await client.send_json({"id": 2, "type": "ha_lists/not_lists"})
+    invalid = await client.receive_json()
+    assert invalid["id"] == 2
+    assert invalid["success"] is False
+
+
+async def test_websocket_rejects_extra_payload(hass, hass_ws_client):
+    """Reject unexpected arguments through the authenticated HA dispatcher."""
+    from homeassistant.components import websocket_api
+
+    websocket_api.async_register_command(hass, ws_lists)
+    client = await hass_ws_client(hass)
+    await client.send_json(
+        {"id": 3, "type": "ha_lists/lists", "entity_id": "todo.other"}
+    )
+    response = await client.receive_json()
+    assert response["id"] == 3
+    assert response["success"] is False
