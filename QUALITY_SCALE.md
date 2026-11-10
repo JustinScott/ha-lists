@@ -36,7 +36,7 @@ Official reference: https://developers.home-assistant.io/docs/core/integration-q
 - Retain pytest-homeassistant-custom-component; do not replace it with pytest-homeassistant.
 - Run existing Home Assistant integration tests, Ruff, Hassfest, HACS validation, and coverage.
 - Add focused HA fixture-based tests for each behavior before marking a rule complete.
-- Coverage reporting is diagnostic until a justified threshold is established.
+- Coverage job enforces a 90% minimum for the current Python integration modules. The prior verified baseline was 100% of 54 statements (run 42755019439); percentage does not replace meaningful behavior/permission tests.
 - Hassfest/HACS passing is not evidence of IQS level achievement.
 
 
@@ -68,9 +68,9 @@ Reference: https://contributors.home-assistant.io/core/quality-scale/rules/ (20 
 | unique-config-entry | Implemented, verify | `async_set_unique_id` + duplicate abort; existing test. |
 
 ### Cross-cutting security and reliability follow-ups (not substitutes for IQS rules)
-- [ ] End-to-end authenticated WebSocket authorization, entity visibility and malformed payload tests (direct handler tests are insufficient).
+- [ ] End-to-end authenticated WebSocket authorization, entity visibility and malformed payload tests: authenticated dispatch and malformed payload checks exist; entity read permission filtering and restricted-user direct-handler tests added, but real restricted-user WebSocket fixture validation remains outstanding.
 - [ ] Validate setup/unload/reload and partial-registration failure cleanup; ensure commands/resources do not duplicate or linger.
-- [ ] Verify actual GitHub Actions results and run tests before marking implementation/test claims complete.
+- [ ] Verify the CI run following entity permission enforcement and 90% coverage gate. Dependency review still requires a real pull request; a push-run skip is expected.
 - [ ] Confirm exemption interpretations against the individual official rule pages and record justification in release review.
 
 **Important:** The official 20-rule Bronze list differs from the original project-specific seven-item tracker. Do not infer that completing seven local items achieves Bronze.
