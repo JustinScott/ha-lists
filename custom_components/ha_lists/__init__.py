@@ -5,12 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import voluptuous as vol
+from homeassistant.auth.permissions.const import POLICY_READ
 from homeassistant.components import panel_custom, websocket_api
 from homeassistant.components.frontend import async_remove_panel
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.auth.permissions.const import POLICY_READ
 
 from .const import DOMAIN
 
