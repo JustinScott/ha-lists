@@ -10,6 +10,7 @@ from homeassistant.components.frontend import async_remove_panel
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.auth.permissions.const import POLICY_READ
 
 from .const import DOMAIN
 
@@ -27,7 +28,12 @@ async def ws_lists(
     """Return configured list IDs for an authenticated frontend."""
     entries = hass.config_entries.async_entries(DOMAIN)
     selected = entries[0].options.get(CONF_LISTS, []) if entries else []
-    connection.send_result(msg["id"], {"lists": selected})
+    visible = [
+        entity_id
+        for entity_id in selected
+        if connection.user.permissions.check_entity(entity_id, POLICY_READ)
+    ]
+    connection.send_result(msg["id"], {"lists": visible})
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
