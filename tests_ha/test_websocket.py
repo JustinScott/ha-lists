@@ -104,3 +104,48 @@ async def test_websocket_rejects_extra_payload(hass, hass_ws_client):
     response = await client.receive_json()
     assert response["id"] == 3
     assert response["success"] is False
+
+
+async def test_non_admin_only_sees_authorized_entities(hass):
+    """A restricted user must not receive configured but unreadable list IDs."""
+    from homeassistant.auth.permissions.const import POLICY_READ
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="HA Lists",
+        data={},
+        options={"lists": ["todo.allowed", "todo.restricted"]},
+    )
+    entry.add_to_hass(hass)
+    connection = MagicMock()
+    connection.user.is_admin = False
+    connection.user.permissions.check_entity.side_effect = (
+        lambda entity_id, policy: policy == POLICY_READ
+        and entity_id == "todo.allowed"
+    )
+
+    ws_lists(hass, connection, {"id": 10, "type": "ha_lists/lists"})
+    await hass.async_block_till_done()
+    connection.send_result.assert_called_once_with(
+        10, {"lists": ["todo.allowed"]}
+    )
+    connection.user.permissions.check_entity.assert_any_call(
+        "todo.restricted", POLICY_READ
+    )
+
+
+async def test_no_entity_permissions_returns_no_lists(hass):
+    """Configured entity IDs are not leaked to users without read access."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="HA Lists",
+        data={},
+        options={"lists": ["todo.restricted"]},
+    )
+    entry.add_to_hass(hass)
+    connection = MagicMock()
+    connection.user.permissions.check_entity.return_value = False
+
+    ws_lists(hass, connection, {"id": 11, "type": "ha_lists/lists"})
+    await hass.async_block_till_done()
+    connection.send_result.assert_called_once_with(11, {"lists": []})
