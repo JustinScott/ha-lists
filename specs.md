@@ -166,7 +166,7 @@ other todo entities
 
 - CI runs Node-based DOM behavioral tests in `tests_behavior/panel.test.mjs` on every push and pull request, independently of Python/HA tests. These tests execute the actual frontend panel code with synthetic Home Assistant state and mocked authenticated WebSocket/service calls; they are not source-text contract checks.
 - Current scenarios cover configured-list loading, empty states, list switching, native add via Enter and Add, consecutive entry and retained input element, composition/duplicate submission, failed additions, completion/reopening and sorting, rollback on failed update, pending-update suppression, and safe text rendering.
-- `.github/workflows/validate.yml` offers manual `workflow_dispatch` suite choices: `all`, `pytest` (Home Assistant tests), or `behavioral`. The existing lint-and-contracts job also runs regular `tests/` Pytest on push/PR. The manual `pytest` choice currently runs `tests_ha/` only; expand if a unified Python-only manual run is desired.
+- `.github/workflows/validate.yml` offers manual `workflow_dispatch` suite choices: `all`, `pytest` (Home Assistant tests), or `behavioral`. The existing lint-and-contracts job also runs regular `tests/` Pytest on push/PR. The manual `pytest` choice runs both the regular `tests/` and Home Assistant `tests_ha/` suites as separate jobs.
 - All new features and bug fixes must add executable behavioral tests as applicable before being considered complete. Browser DOM simulations do **not** replace real Android companion-app keyboard/IME verification or integration tests against HA.
 - These tests were committed without an observed passing CI run; do not mark the suite verified until GitHub Actions results are checked.
 
