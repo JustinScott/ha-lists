@@ -78,6 +78,12 @@ async def test_selected_list_and_tasks_survive_home_assistant_restart(
             {"entity_id": LIST_ID, "item": created["uid"], "status": "completed"},
             blocking=True,
         )
+        await first.services.async_call(
+            "todo",
+            "update_item",
+            {"entity_id": LIST_ID, "item": created["uid"], "rename": "Green apples"},
+            blocking=True,
+        )
         assert first.states.get(LIST_ID).state == "0"
 
     async with running_hass(tmp_path) as restarted:
@@ -89,14 +95,14 @@ async def test_selected_list_and_tasks_survive_home_assistant_restart(
         assert entry.options["lists"] == [LIST_ID]
         [restored] = await get_tasks(restarted)
         assert restored["uid"] == created["uid"]
-        assert restored["summary"] == "Apples"
+        assert restored["summary"] == "Green apples"
         assert restored["description"] == "Two green apples"
         assert restored["due"] == "2030-04-05"
         assert restored["status"] == "completed"
         assert restarted.states.get(LIST_ID).state == "0"
 
 
-async def test_read_only_websocket_cannot_add_or_complete_tasks(
+async def test_read_only_websocket_cannot_add_or_update_tasks(
     hass, hass_ws_client, hass_read_only_user, tmp_path
 ):
     """Native task writes require control permission even for a visible list."""
@@ -125,6 +131,7 @@ async def test_read_only_websocket_cannot_add_or_complete_tasks(
     for msg_id, service, data in (
         (2, "add_item", {"item": "Unauthorized task"}),
         (3, "update_item", {"item": created["uid"], "status": "completed"}),
+        (4, "update_item", {"item": created["uid"], "rename": "Unauthorized rename"}),
     ):
         await client.send_json(
             {

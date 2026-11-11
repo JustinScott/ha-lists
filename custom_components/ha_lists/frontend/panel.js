@@ -1,3 +1,5 @@
+const UPDATE_TODO_ITEM = 4; // Home Assistant TodoListEntityFeature
+
 /** Lists panel: selected provider discovery and task retrieval and native todo item creation. */
 class HaListsPanel extends HTMLElement {
   constructor() {
@@ -14,6 +16,7 @@ class HaListsPanel extends HTMLElement {
     this._draft = "";
     this._requestId = 0;
     this._updatingItems = new Set();
+    this._edit = null;
   }
 
   set hass(value) {
@@ -24,6 +27,7 @@ class HaListsPanel extends HTMLElement {
       ++this._requestId;
       this._configured = null;
       this._selected = "";
+      this._edit = null;
       this._items = [];
       this._loading = false;
       this._error = "";
@@ -65,7 +69,10 @@ class HaListsPanel extends HTMLElement {
 
   selectFirstAvailable() {
     const ids = this.availableLists.map((entity) => entity.entity_id);
-    if (!ids.includes(this._selected)) this._selected = ids[0] || "";
+    if (!ids.includes(this._selected)) {
+      this._selected = ids[0] || "";
+      this._edit = null;
+    }
     this.loadItems();
   }
 
@@ -158,6 +165,72 @@ class HaListsPanel extends HTMLElement {
     }
   }
 
+  canRename(entity) {
+    return entity && entity.state !== "unavailable" && entity.state !== "unknown"
+      && (entity.attributes?.supported_features & UPDATE_TODO_ITEM) !== 0;
+  }
+
+  startRename(item) {
+    this._edit = {
+      uid: item.uid, title: item.summary || "", saving: false, error: "",
+    };
+    this._titleInput.value = this._edit.title;
+    this.render();
+    this._titleInput.focus();
+    this._titleInput.select();
+  }
+
+  closeRename(uid) {
+    this._edit = null;
+    this.render();
+    const button = [...this._results.querySelectorAll("button[data-uid]")]
+      .find((candidate) => candidate.dataset.uid === uid);
+    (button || this._input).focus();
+  }
+
+  async saveTitle() {
+    const edit = this._edit;
+    const entityId = this._selected;
+    const title = this._titleInput.value.trim();
+    const entity = this.availableLists.find((candidate) => candidate.entity_id === entityId);
+    if (!edit || edit.saving || !title || !this.canRename(entity)) return;
+    if (title === edit.title) {
+      this.closeRename(edit.uid);
+      return;
+    }
+
+    edit.saving = true;
+    edit.error = "";
+    this.render();
+    try {
+      const { items } = await this._connection.sendMessagePromise({
+        type: "todo/item/list", entity_id: entityId,
+      });
+      if (this._edit !== edit || !this.isConnected) return;
+      const current = items?.find((item) => item.uid === edit.uid);
+      if (!current || (current.summary || "") !== edit.title) {
+        await this.loadItems();
+        throw new Error("This task changed elsewhere. Cancel and reopen it to edit the latest title.");
+      }
+      await this._hass.callService("todo", "update_item", {
+        entity_id: entityId, item: edit.uid, rename: title,
+      });
+      if (this._edit !== edit || !this.isConnected) return;
+      await this.loadItems();
+      if (this._edit === edit && this.isConnected) this.closeRename(edit.uid);
+    } catch (error) {
+      if (this._edit === edit) {
+        edit.error = "Unable to rename task: " + String(error);
+        this._titleInput.focus();
+      }
+    } finally {
+      if (this._edit === edit) {
+        edit.saving = false;
+        this.render();
+      }
+    }
+  }
+
   render() {
     if (!this.shadowRoot) return;
     // Construct the form once. Never detach or replace its input during updates:
@@ -176,7 +249,11 @@ class HaListsPanel extends HTMLElement {
         .muted { color:var(--secondary-text-color); }
         .error { color:var(--error-color); }
         form { display:flex; gap:8px; margin:12px 0; }
-        ha-input { flex:1; min-width:0; }
+        ha-input, .title-input { flex:1; min-width:0; }
+        form[hidden], [hidden] { display:none; }
+        .edit-form { align-items:center; flex-wrap:wrap; }
+        .task-title { border:0; background:transparent; color:inherit; font:inherit; padding:6px 0; text-align:left; cursor:pointer; overflow-wrap:anywhere; }
+        .title-input { font:inherit; padding:8px; }
         form button { padding:10px 14px; font:inherit; cursor:pointer; }
         li { padding:10px 0; border-bottom:1px solid var(--divider-color); display:flex; align-items:center; gap:12px; }
         li input[type=checkbox] { width:22px; height:22px; flex:none; accent-color:var(--primary-color); }
@@ -234,10 +311,39 @@ class HaListsPanel extends HTMLElement {
       });
       this._form.append(this._input, this._submit);
       this._results = document.createElement("div");
-      this._note = document.createElement("p");
-      this._note.className = "muted";
-      this._note.textContent = "Add and complete tasks here. Editing and rich metadata are coming later.";
-      article.append(this._heading, this._form, this._results, this._note);
+      this._editForm = document.createElement("form");
+      this._editForm.className = "edit-form";
+      const titleLabel = document.createElement("label");
+      titleLabel.htmlFor = "task-title";
+      titleLabel.textContent = "Task title";
+      this._titleInput = document.createElement("input");
+      this._titleInput.id = "task-title";
+      this._titleInput.className = "title-input";
+      this._titleInput.required = true;
+      this._titleInput.maxLength = 255;
+      this._titleInput.addEventListener("input", () => this.renderEditor());
+      this._saveTitle = document.createElement("button");
+      this._saveTitle.type = "submit";
+      this._saveTitle.textContent = "Save";
+      this._cancelTitle = document.createElement("button");
+      this._cancelTitle.type = "button";
+      this._cancelTitle.textContent = "Cancel";
+      this._cancelTitle.addEventListener("click", () => this.closeRename(this._edit.uid));
+      this._editForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        this.saveTitle();
+      });
+      this._editForm.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !this._edit?.saving) {
+          event.preventDefault();
+          this.closeRename(this._edit.uid);
+        }
+      });
+      this._editForm.append(titleLabel, this._titleInput, this._saveTitle, this._cancelTitle);
+      this._editError = document.createElement("p");
+      this._editError.className = "error";
+      this._editError.setAttribute("role", "alert");
+      article.append(this._heading, this._form, this._editForm, this._editError, this._results);
       layout.append(this._nav, article);
       this._main.append(h1, layout);
       this.shadowRoot.replaceChildren(style, this._main);
@@ -252,7 +358,11 @@ class HaListsPanel extends HTMLElement {
       button.type = "button";
       button.textContent = entity.attributes?.friendly_name || entity.entity_id;
       button.setAttribute("aria-current", String(entity.entity_id === this._selected));
-      button.addEventListener("click", () => { this._selected = entity.entity_id; this.loadItems(); });
+      button.addEventListener("click", () => {
+        if (this._selected !== entity.entity_id) this._edit = null;
+        this._selected = entity.entity_id;
+        this.loadItems();
+      });
       navChildren.push(button);
     }
     if (this._configured?.length === 0) {
@@ -273,6 +383,7 @@ class HaListsPanel extends HTMLElement {
     if (this.shadowRoot.activeElement !== this._input && this._input.value !== this._draft) {
       this._input.value = this._draft;
     }
+    this.renderEditor();
     const results = [];
     if (this._loading) {
       const p = document.createElement("p");
@@ -306,9 +417,18 @@ class HaListsPanel extends HTMLElement {
           checkbox.disabled = !itemId || this._updatingItems.has(this._selected + ":" + itemId);
           checkbox.setAttribute("aria-label", (checkbox.checked ? "Reopen " : "Complete ") + (item.summary || "Untitled task"));
           checkbox.addEventListener("change", () => this.setItemCompleted(item, checkbox.checked));
-          const label = document.createElement("span");
+          const editable = item.uid && this.canRename(selected);
+          const label = document.createElement(editable ? "button" : "span");
+          if (editable) {
+            label.type = "button";
+            label.className = "task-title";
+            label.dataset.uid = item.uid;
+            label.setAttribute("aria-label", "Rename " + (item.summary || "Untitled task"));
+            label.disabled = Boolean(this._edit);
+            label.addEventListener("click", () => this.startRename(item));
+          }
           label.textContent = item.summary || "Untitled task";
-          if (checkbox.checked) label.className = "completed";
+          if (checkbox.checked) label.classList.add("completed");
           li.append(checkbox, label);
           list.append(li);
         }
@@ -316,6 +436,17 @@ class HaListsPanel extends HTMLElement {
       }
     }
     this._results.replaceChildren(...results);
+  }
+
+  renderEditor() {
+    const edit = this._edit;
+    const selected = this.availableLists.find((entity) => entity.entity_id === this._selected);
+    this._editForm.hidden = !edit;
+    this._titleInput.readOnly = Boolean(edit?.saving);
+    this._saveTitle.disabled = !edit || edit.saving || !this._titleInput.value.trim() || !this.canRename(selected);
+    this._cancelTitle.disabled = Boolean(edit?.saving);
+    this._editError.hidden = !edit?.error;
+    this._editError.textContent = edit?.error || "";
   }
 }
 if (!customElements.get("ha-lists-panel")) {

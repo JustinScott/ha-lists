@@ -11,7 +11,7 @@ const deferred = () => {
   return { promise, resolve, reject };
 };
 
-async function setup({ lists = ["todo.groceries"], items = [], service, readItems } = {}) {
+async function setup({ lists = ["todo.groceries"], items = [], service, readItems, supportedFeatures = 4 } = {}) {
   const dom = new JSDOM("<!doctype html><html><body></body></html>", {
     runScripts: "outside-only", pretendToBeVisual: true,
   });
@@ -24,7 +24,7 @@ async function setup({ lists = ["todo.groceries"], items = [], service, readItem
   const calls = [];
   const requests = [];
   const states = Object.fromEntries(lists.map((id) => [id, {
-    entity_id: id, state: "0", attributes: { friendly_name: id },
+    entity_id: id, state: "0", attributes: { friendly_name: id, supported_features: supportedFeatures },
   }]));
   const hass = {
     states,
@@ -44,7 +44,8 @@ async function setup({ lists = ["todo.groceries"], items = [], service, readItem
       if (action === "add_item") items.push({ uid: "new-" + items.length, summary: data.item, status: "needs_action" });
       if (action === "update_item") {
         const item = items.find((candidate) => (candidate.uid || candidate.summary) === data.item);
-        if (item) item.status = data.status;
+        if (item && data.status) item.status = data.status;
+        if (item && data.rename) item.summary = data.rename;
       }
     },
   };
@@ -135,7 +136,7 @@ test("completion sends UID, sorts completed last and strikes title", async () =>
   await tick(); await tick();
   assert.deepEqual(JSON.parse(JSON.stringify(calls[0])), { domain: "todo", action: "update_item", data: { entity_id: "todo.groceries", item: "a", status: "completed" } });
   assert.deepEqual(rows(panel).map((row) => row.textContent), ["Bread", "Apples"]);
-  assert.equal(rows(panel)[1].querySelector("span").className, "completed");
+  assert.equal(rows(panel)[1].querySelector(".task-title").classList.contains("completed"), true);
 });
 
 test("reopening a completed item sends needs_action and restores active order", async () => {
@@ -249,4 +250,78 @@ test("a slow task response cannot overwrite the list the user switched to", asyn
   groceries.resolve([{ uid: "apples", summary: "Apples", status: "needs_action" }]);
   await tick();
   assert.deepEqual(rows(panel).map((row) => row.textContent), ["Screws"]);
+});
+
+function openRename(panel, title) {
+  const root = panel.shadowRoot;
+  [...root.querySelectorAll("button")].find((button) =>
+    button.getAttribute("aria-label") === `Rename ${title}`).click();
+  return root.querySelector(".title-input");
+}
+
+function saveTitle(window, input, value) {
+  input.value = value;
+  input.dispatchEvent(new window.Event("input", { bubbles: true }));
+  input.form.requestSubmit();
+}
+
+test("rename uses the stable ID even when two tasks have the same title", async () => {
+  const { panel, window, calls } = await setup({ items: [
+    { uid: "first", summary: "Apples", status: "needs_action" },
+    { uid: "second", summary: "Apples", status: "needs_action" },
+  ] });
+  const input = openRename(panel, "Apples");
+  assert.equal(input.value, "Apples");
+  saveTitle(window, input, "  Green apples  ");
+  await tick();
+  assert.deepEqual(JSON.parse(JSON.stringify(calls[0].data)), {
+    entity_id: "todo.groceries", item: "first", rename: "Green apples",
+  });
+  assert.deepEqual(rows(panel).map((row) => row.textContent), ["Green apples", "Apples"]);
+  assert.equal(input.form.hidden, true);
+});
+
+test("cancel and unsupported items never submit a rename", async () => {
+  const { panel, calls } = await setup({ items: [
+    { uid: "first", summary: "Apples", status: "needs_action" },
+    { summary: "No ID", status: "needs_action" },
+  ] });
+  const input = openRename(panel, "Apples");
+  input.value = "Discard me";
+  input.form.querySelector("button[type=button]").click();
+  assert.equal(input.form.hidden, true);
+  assert.equal(panel.shadowRoot.activeElement.textContent, "Apples");
+  assert.equal(calls.length, 0);
+  assert.equal(panel.shadowRoot.querySelector('[aria-label="Rename No ID"]'), null);
+  const readOnly = await setup({
+    supportedFeatures: 0, items: [{ uid: "first", summary: "Apples" }],
+  });
+  assert.equal(readOnly.panel.shadowRoot.querySelector('[aria-label="Rename Apples"]'), null);
+});
+
+test("a rejected rename preserves the draft and shows the original task title", async () => {
+  const { panel, window } = await setup({
+    items: [{ uid: "first", summary: "Apples", status: "needs_action" }],
+    service: async () => { throw Error("provider offline"); },
+  });
+  const input = openRename(panel, "Apples");
+  saveTitle(window, input, "Green apples");
+  await tick();
+  assert.equal(input.form.hidden, false);
+  assert.equal(input.value, "Green apples");
+  assert.equal(rows(panel)[0].textContent, "Apples");
+  assert.match(panel.shadowRoot.querySelector('.edit-form + [role="alert"]').textContent, /provider offline/);
+});
+
+test("an external rename detected on save preserves the newer title", async () => {
+  const items = [{ uid: "first", summary: "Apples", status: "needs_action" }];
+  const { panel, window, calls } = await setup({ items });
+  const input = openRename(panel, "Apples");
+  items[0].summary = "Changed elsewhere";
+  saveTitle(window, input, "Green apples");
+  await tick();
+  assert.equal(input.value, "Green apples");
+  assert.equal(rows(panel)[0].textContent, "Changed elsewhere");
+  assert.match(panel.shadowRoot.querySelector('.edit-form + [role="alert"]').textContent, /changed elsewhere/);
+  assert.equal(calls.length, 0);
 });

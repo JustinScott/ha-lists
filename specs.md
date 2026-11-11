@@ -189,6 +189,13 @@ other todo entities
 - Verify both directions against a Local To-do entity and in the Android companion app; add regression tests for status updates, failures, sorting, and repeated taps.
 - Implementation started in commit `7fe7aa3`; this is **not yet user-verified or release-ready**.
 
+### Milestone 2 — task title editing
+
+- Selecting an editable task title opens a title field with Save and Cancel. Enable editing for lists that support native item updates and tasks with a stable provider UID.
+- Save sends the trimmed title through the native To-do update action. Cancel discards the draft. A failed save preserves the draft and displays the error.
+- Before saving, fetch the current task by UID. If it was removed or its title changed since editing began, preserve the draft and ask the user to reopen the task. The native update action does not provide an atomic compare-and-set.
+- Verify that native To-do reflects a rename made in HA Lists without refreshing the browser. Verify that the renamed task retains its UID and existing fields after a Local To-do restart.
+
 ### Milestone 2 — task-entry UX acceptance criteria (approved 2026-11-09)
 
 - Task entry must work in the Home Assistant Android companion app as well as Chrome, Firefox, and desktop browsers. Use a compatible Home Assistant input component (currently `ha-input`); avoid unmounting or replacing the active input during asynchronous updates, which can dismiss the Android keyboard.

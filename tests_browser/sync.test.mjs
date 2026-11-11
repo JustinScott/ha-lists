@@ -76,8 +76,8 @@ async function configureLists(base, username, password) {
   assert.equal(result.type, "create_entry");
 }
 
-async function openPanel(browser, base, path, username, password) {
-  const page = await browser.newPage();
+async function openPanel(browser, base, path, username, password, options) {
+  const page = await browser.newPage(options);
   await page.goto(new URL(path, base).href);
   await page.locator('input[name="username"]').fill(username);
   await page.locator('input[name="password"]').fill(password);
@@ -118,9 +118,23 @@ test("native To-do and HA Lists share task changes across browser sessions", { t
     await configureLists(base, username, password);
 
     browser = await chromium.launch();
-    const lists = await openPanel(browser, base, "/ha-lists", username, password);
+    const lists = await openPanel(browser, base, "/ha-lists", username, password, {
+      viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true,
+    });
     await lists.getByRole("button", { name: listName }).waitFor();
     await lists.getByText("No tasks found.").waitFor();
+    const quickAdd = lists.locator("ha-lists-panel ha-input input");
+    await quickAdd.fill("First quick task");
+    await quickAdd.press("Enter");
+    await lists.getByRole("button", { name: "Rename First quick task" }).waitFor();
+    assert.equal(await quickAdd.inputValue(), "");
+    assert.ok(await quickAdd.evaluate((input) => input.matches(":focus")));
+    await lists.keyboard.type("Second quick task");
+    await lists.getByRole("button", { name: "Add", exact: true }).tap();
+    await lists.getByRole("button", { name: "Rename Second quick task" }).waitFor();
+    assert.equal(await quickAdd.inputValue(), "");
+    assert.ok(await quickAdd.evaluate((input) => input.matches(":focus")));
+
     const native = await openPanel(browser, base, "/todo", username, password);
     const item = "Shared browser task";
     const nativeCard = native.locator("hui-todo-list-card");
@@ -128,10 +142,17 @@ test("native To-do and HA Lists share task changes across browser sessions", { t
     await nativeInput.fill(item);
     await nativeInput.press("Enter");
 
-    const complete = lists.getByRole("checkbox", { name: `Complete ${item}` });
+    await lists.getByRole("button", { name: `Rename ${item}` }).tap();
+    const renamed = "Renamed browser task";
+    await lists.getByRole("textbox", { name: "Task title" }).fill(renamed);
+    await lists.getByRole("button", { name: "Save", exact: true }).tap();
+    await nativeCard.getByText(renamed, { exact: true }).waitFor();
+    assert.equal(await nativeCard.getByText(item, { exact: true }).count(), 0);
+
+    const complete = lists.getByRole("checkbox", { name: `Complete ${renamed}` });
     await complete.click();
-    await lists.locator(`input[aria-label="Reopen ${item}"]:checked`).waitFor();
-    await nativeCard.locator(".completed").getByText(item, { exact: true }).waitFor();
+    await lists.locator(`input[aria-label="Reopen ${renamed}"]:checked`).waitFor();
+    await nativeCard.locator(".completed").getByText(renamed, { exact: true }).waitFor();
   } catch (error) {
     const logs = created && await docker("docker", ["logs", "--tail", "50", name],
       { timeout: 5_000 }).catch(() => null);
