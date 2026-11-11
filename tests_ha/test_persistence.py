@@ -2,8 +2,10 @@
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 
+import pytest
 from homeassistant import data_entry_flow, loader
 from homeassistant.config_entries import SOURCE_USER, ConfigEntryState
 from homeassistant.core import HomeAssistant
@@ -34,7 +36,13 @@ async def get_tasks(hass: HomeAssistant) -> list[dict]:
     return result[LIST_ID]["items"]
 
 
+@pytest.mark.parametrize(
+    ("due_field", "due_value"),
+    [("due_date", "2030-04-06"), ("due_datetime", "2030-07-05T10:30:47-05:00")],
+)
 async def test_selected_list_and_tasks_survive_home_assistant_restart(
+    due_field: str,
+    due_value: str,
     tmp_path: Path,
 ) -> None:
     """A fresh HA instance restores list binding, task identity, and metadata."""
@@ -86,7 +94,7 @@ async def test_selected_list_and_tasks_survive_home_assistant_restart(
                 "item": created["uid"],
                 "rename": "Green apples",
                 "description": "Updated shopping note",
-                "due_date": "2030-04-06",
+                due_field: due_value,
             },
             blocking=True,
         )
@@ -118,7 +126,12 @@ async def test_selected_list_and_tasks_survive_home_assistant_restart(
         assert restored["uid"] == created["uid"]
         assert restored["summary"] == "Green apples"
         assert restored["description"] == "Updated shopping note"
-        assert restored["due"] == "2030-04-06"
+        if due_field == "due_datetime":
+            assert datetime.fromisoformat(restored["due"]) == datetime.fromisoformat(
+                due_value
+            )
+        else:
+            assert restored["due"] == due_value
         assert restored["status"] == "completed"
         assert restarted.states.get(LIST_ID).state == "0"
 
@@ -154,6 +167,11 @@ async def test_read_only_websocket_cannot_write_tasks(
         (3, "update_item", {"item": created["uid"], "status": "completed"}),
         (4, "update_item", {"item": created["uid"], "rename": "Unauthorized rename"}),
         (5, "remove_item", {"item": created["uid"]}),
+        (
+            6,
+            "update_item",
+            {"item": created["uid"], "due_datetime": "2030-07-05T10:30:00-05:00"},
+        ),
     ):
         await client.send_json(
             {

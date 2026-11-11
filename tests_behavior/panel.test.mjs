@@ -52,6 +52,7 @@ async function setup({ lists = ["todo.groceries"], items = [], service, readItem
         if (item && data.rename) item.summary = data.rename;
         if (item && "description" in data) item.description = data.description;
         if (item && "due_date" in data) item.due = data.due_date;
+        if (item && "due_datetime" in data) item.due = data.due_datetime;
       }
     },
   };
@@ -295,7 +296,7 @@ test("cancel and unsupported items never submit a rename", async () => {
   ] });
   const input = openRename(panel, "Apples");
   input.value = "Discard me";
-  input.form.querySelector("button[type=button]").click();
+  deleteButton(panel, "Cancel").click();
   assert.equal(input.form.hidden, true);
   assert.equal(panel.shadowRoot.activeElement.textContent, "Apples");
   assert.equal(calls.length, 0);
@@ -426,7 +427,7 @@ test("only supported fields appear and saving a title preserves timed deadlines"
   assert.equal(title.form.querySelector("textarea").parentElement.hidden, true);
   assert.equal(title.form.querySelector('input[type="date"]').parentElement.hidden, true);
 
-  const { panel, window, calls } = await setup({ supportedFeatures: 4 | 16 | 32 | 64, items: [
+  const { panel, window, calls } = await setup({ supportedFeatures: 4 | 16 | 64, items: [
     { uid: "one", summary: "Apples", description: "Keep note", due: "2030-04-05T12:30:00+00:00" },
   ] });
   const input = openRename(panel, "Apples");
@@ -450,5 +451,66 @@ test("an external description change blocks overwriting that field and preserves
   await tick();
   assert.equal(description.value, "Draft note");
   assert.match(panel.shadowRoot.querySelector('[role="alert"]').textContent, /changed elsewhere/);
+  assert.equal(calls.length, 0);
+});
+
+test("timed deadlines can be edited, changed to date-only and cleared", async () => {
+  const { panel, calls } = await setup({ supportedFeatures: 4 | 16 | 32, items: [
+    { uid: "one", summary: "Apples", due: "2030-07-05T15:30:00Z" },
+  ] });
+  const title = openRename(panel, "Apples");
+  const date = title.form.querySelector('input[type="date"]');
+  const time = title.form.querySelector('input[type="time"]');
+  assert.equal(time.parentElement.hidden, false);
+  date.value = "2030-07-06";
+  time.value = "10:45:00";
+  title.form.requestSubmit();
+  await tick();
+  assert.equal(calls[0].data.due_datetime, new Date("2030-07-06T10:45:00").toISOString());
+  assert.equal("due_date" in calls[0].data, false);
+
+  openRename(panel, "Apples");
+  time.value = "";
+  title.form.requestSubmit();
+  await tick();
+  assert.equal(calls[1].data.due_date, "2030-07-06");
+
+  openRename(panel, "Apples");
+  deleteButton(panel, "Clear deadline").click();
+  title.form.requestSubmit();
+  await tick();
+  assert.equal(calls[2].data.due_datetime, null);
+});
+
+test("unchanged timed deadlines retain their original offset and seconds", async () => {
+  const { panel, window, calls } = await setup({ supportedFeatures: 4 | 16 | 32, items: [
+    { uid: "one", summary: "Apples", due: "2030-11-03T01:30:47-06:00" },
+  ] });
+  const title = openRename(panel, "Apples");
+  saveTitle(window, title, "Green apples");
+  await tick();
+  assert.deepEqual(JSON.parse(JSON.stringify(calls[0].data)), {
+    entity_id: "todo.groceries", item: "one", rename: "Green apples",
+  });
+});
+
+test("datetime-only providers reject date-only edits and preserve a rejected draft", async () => {
+  const { panel, calls } = await setup({ supportedFeatures: 4 | 32, items: [
+    { uid: "one", summary: "Apples" },
+  ] });
+  const title = openRename(panel, "Apples");
+  const date = title.form.querySelector('input[type="date"]');
+  const time = title.form.querySelector('input[type="time"]');
+  date.value = "2030-07-06";
+  title.form.requestSubmit();
+  await tick();
+  assert.match(panel.shadowRoot.querySelector('[role="alert"]').textContent, /requires a time/);
+  assert.equal(calls.length, 0);
+  time.value = "10:30";
+  date.value = "";
+  title.form.requestSubmit();
+  await tick();
+  assert.match(panel.shadowRoot.querySelector('[role="alert"]').textContent, /Choose a due date/);
+  assert.equal(time.value, "10:30");
   assert.equal(calls.length, 0);
 });

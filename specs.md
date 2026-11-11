@@ -215,7 +215,7 @@ other todo entities
 ### Milestone 3 — native descriptions and due dates
 
 - Edit descriptions and date-only deadlines for tasks whose providers support those fields. Save only changed fields through the native To-do update action. Clearing an editable field sends a null value.
-- Display an existing timed deadline in the editor and preserve it when saving other fields. Timed deadline editing and Overdue and Due today filters are follow-ups.
+- Allow timed deadlines when the provider supports them. Show the browser time zone beside the editor, convert the entered local date and time to an explicit UTC instant on save, and preserve the original value when the deadline is unchanged. Allow conversion to date-only when supported and clearing the entire deadline. Reject nonexistent daylight-saving times and retain the draft. Newly entered ambiguous fall-back times use the browser's earlier occurrence. Overdue and Due today filters are follow-ups.
 - Preserve the draft on save failure. Check changed fields against the latest provider values before writing, so a detected concurrent change to the same field is not overwritten.
 - Verify capability handling, field clearing and conflict behavior in the panel suite, updated values after a Local To-do restart, and updates in the open native To-do browser session.
 

@@ -2,6 +2,7 @@
 const DELETE_TODO_ITEM = 2;
 const UPDATE_TODO_ITEM = 4;
 const SET_DUE_DATE_ON_ITEM = 16;
+const SET_DUE_DATETIME_ON_ITEM = 32;
 const SET_DESCRIPTION_ON_ITEM = 64;
 
 /** Lists panel: selected provider discovery and task retrieval and native todo item creation. */
@@ -185,7 +186,15 @@ class HaListsPanel extends HTMLElement {
     };
     this._titleInput.value = this._edit.title;
     this._descriptionInput.value = this._edit.description;
-    this._dueInput.value = this._edit.timedDue ? "" : this._edit.due;
+    const local = this._edit.timedDue ? new Date(this._edit.due) : null;
+    const pad = (value) => String(value).padStart(2, "0");
+    this._dueInput.value = local
+      ? `${local.getFullYear()}-${pad(local.getMonth() + 1)}-${pad(local.getDate())}`
+      : this._edit.due;
+    this._dueTimeInput.value = local
+      ? `${pad(local.getHours())}:${pad(local.getMinutes())}:${pad(local.getSeconds())}` : "";
+    this._edit.dateValue = this._dueInput.value;
+    this._edit.timeValue = this._dueTimeInput.value;
     this.render();
     if (this._titleInput.hidden) {
       this._deleteTask.focus();
@@ -215,9 +224,40 @@ class HaListsPanel extends HTMLElement {
         && this._descriptionInput.value !== edit.description) {
       changes.description = this._descriptionInput.value || null;
     }
-    if (!edit.timedDue && this.supportsTaskAction(entity, SET_DUE_DATE_ON_ITEM)
-        && this._dueInput.value !== edit.due) {
-      changes.due_date = this._dueInput.value || null;
+    const canSetTime = this.supportsTaskAction(entity, SET_DUE_DATETIME_ON_ITEM);
+    const canSetDate = this.supportsTaskAction(entity, SET_DUE_DATE_ON_ITEM);
+    const dateChanged = this._dueInput.value !== edit.dateValue;
+    const timeChanged = this._dueTimeInput.value !== edit.timeValue;
+    if ((canSetTime || (canSetDate && !edit.timedDue)) && (dateChanged || timeChanged)) {
+      const date = this._dueInput.value;
+      const time = this._dueTimeInput.value;
+      if (time && !date) {
+        edit.error = "Choose a due date for this time, or clear the time.";
+        this.renderEditor();
+        return;
+      }
+      if (!date) {
+        changes[canSetTime ? "due_datetime" : "due_date"] = null;
+      } else if (time && canSetTime) {
+        const local = new Date(date + "T" + time);
+        const [year, month, day] = date.split("-").map(Number);
+        const [hour, minute, second = 0] = time.split(":").map(Number);
+        if (Number.isNaN(local.getTime()) || local.getFullYear() !== year
+            || local.getMonth() + 1 !== month || local.getDate() !== day
+            || local.getHours() !== hour || local.getMinutes() !== minute
+            || local.getSeconds() !== second) {
+          edit.error = "This time does not exist in your time zone. Choose another time.";
+          this.renderEditor();
+          return;
+        }
+        changes.due_datetime = local.toISOString();
+      } else if (canSetDate) {
+        changes.due_date = date;
+      } else {
+        edit.error = "This list requires a time with its due date.";
+        this.renderEditor();
+        return;
+      }
     }
     if (!Object.keys(changes).length) {
       this.closeTaskEditor(edit.uid);
@@ -236,7 +276,7 @@ class HaListsPanel extends HTMLElement {
       if (!current
           || ("rename" in changes && (current.summary || "") !== edit.title)
           || ("description" in changes && (current.description || "") !== edit.description)
-          || ("due_date" in changes && (current.due || "") !== edit.due)) {
+          || (("due_date" in changes || "due_datetime" in changes) && (current.due || "") !== edit.due)) {
         await this.loadItems();
         throw new Error("This task changed elsewhere. Cancel and reopen it to edit the latest version.");
       }
@@ -403,6 +443,19 @@ class HaListsPanel extends HTMLElement {
       this._dueInput = document.createElement("input");
       this._dueInput.type = "date";
       this._dueField.append("Due date", this._dueInput);
+      this._dueTimeField = document.createElement("label");
+      this._dueTimeField.className = "edit-field";
+      this._dueTimeInput = document.createElement("input");
+      this._dueTimeInput.type = "time";
+      this._dueTimeInput.step = "1";
+      this._dueTimeField.append("Due time", this._dueTimeInput);
+      this._clearDeadline = document.createElement("button");
+      this._clearDeadline.type = "button";
+      this._clearDeadline.textContent = "Clear deadline";
+      this._clearDeadline.addEventListener("click", () => {
+        this._dueInput.value = "";
+        this._dueTimeInput.value = "";
+      });
       this._timedDeadline = document.createElement("p");
       this._timedDeadline.className = "timed-deadline";
       this._saveTitle = document.createElement("button");
@@ -440,7 +493,7 @@ class HaListsPanel extends HTMLElement {
         }
       });
       this._editForm.append(
-        this._titleLabel, this._titleInput, this._descriptionField, this._dueField,
+        this._titleLabel, this._titleInput, this._descriptionField, this._dueField, this._dueTimeField, this._clearDeadline,
         this._timedDeadline, this._saveTitle, this._cancelTitle, this._deleteTask,
         this._deletePrompt, this._cancelDelete, this._confirmDelete,
       );
@@ -557,11 +610,17 @@ class HaListsPanel extends HTMLElement {
     this._titleLabel.hidden = this._titleInput.hidden = this._saveTitle.hidden = confirming || !canRename;
     const showDetails = Boolean(edit && canRename && !confirming);
     this._descriptionField.hidden = !showDetails || !this.supportsTaskAction(selected, SET_DESCRIPTION_ON_ITEM);
-    this._dueField.hidden = !showDetails || edit?.timedDue || !this.supportsTaskAction(selected, SET_DUE_DATE_ON_ITEM);
-    this._timedDeadline.hidden = !showDetails || !edit?.timedDue;
-    this._timedDeadline.textContent = edit?.timedDue
-      ? "Due date and time: " + new Date(edit.due).toLocaleString() : "";
-    this._descriptionInput.readOnly = this._dueInput.readOnly = Boolean(edit?.saving);
+    const canSetTime = this.supportsTaskAction(selected, SET_DUE_DATETIME_ON_ITEM);
+    const canSetDate = this.supportsTaskAction(selected, SET_DUE_DATE_ON_ITEM);
+    this._dueField.hidden = !showDetails || (!canSetTime && (!canSetDate || edit?.timedDue));
+    this._dueTimeField.hidden = !showDetails || !canSetTime;
+    this._clearDeadline.hidden = this._dueField.hidden;
+    this._clearDeadline.disabled = Boolean(edit?.saving);
+    this._timedDeadline.hidden = !showDetails || (!canSetTime && !edit?.timedDue);
+    this._timedDeadline.textContent = canSetTime
+      ? "Time zone: " + Intl.DateTimeFormat().resolvedOptions().timeZone
+      : "Due date and time: " + new Date(edit?.due).toLocaleString();
+    this._descriptionInput.readOnly = this._dueInput.readOnly = this._dueTimeInput.readOnly = Boolean(edit?.saving);
     this._cancelTitle.hidden = confirming;
     this._deleteTask.hidden = confirming || !canDelete;
     this._deleteTask.disabled = Boolean(edit?.saving);

@@ -74,6 +74,7 @@ async function configureLists(base, username, password) {
   const flow = await post(base, options, { handler: entry.entry_id }, token);
   const result = await post(base, `${options}/${flow.flow_id}`, { lists: [entityId] }, token);
   assert.equal(result.type, "create_entry");
+  return token;
 }
 
 async function openPanel(browser, base, path, username, password, options) {
@@ -115,11 +116,11 @@ test("native To-do and HA Lists share task changes across browser sessions", { t
 
     const username = "smoke-test";
     const password = randomUUID();
-    await configureLists(base, username, password);
+    const token = await configureLists(base, username, password);
 
     browser = await chromium.launch();
     const lists = await openPanel(browser, base, "/ha-lists", username, password, {
-      viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true,
+      viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, timezoneId: "America/Chicago",
     });
     await lists.getByRole("button", { name: listName }).waitFor();
     await lists.getByText("No tasks found.").waitFor();
@@ -157,7 +158,26 @@ test("native To-do and HA Lists share task changes across browser sessions", { t
     await lists.getByRole("button", { name: `Rename ${renamed}` }).tap();
     const dueDate = lists.getByLabel("Due date", { exact: true });
     assert.equal(await dueDate.inputValue(), "2030-04-05");
-    await dueDate.fill("");
+    const dueTime = lists.getByLabel("Due time", { exact: true });
+    for (const [date, utcHour] of [["2030-07-05", 15], ["2030-01-05", 16]]) {
+      await dueDate.fill(date);
+      await dueTime.fill("10:30:00");
+      await lists.getByRole("button", { name: "Save", exact: true }).tap();
+      await lists.getByRole("button", { name: `Rename ${renamed}` }).tap();
+      assert.equal(await dueDate.inputValue(), date);
+      assert.match(await dueTime.inputValue(), /^10:30/);
+      const response = await post(base, "/api/services/todo/get_items?return_response", {
+        entity_id: entityId,
+      }, token);
+      const task = response.service_response[entityId].items.find((task) => task.summary === renamed);
+      assert.equal(new Date(task.due).toISOString(), `${date}T${utcHour}:30:00.000Z`);
+    }
+    await dueDate.fill("2030-03-10");
+    await dueTime.fill("02:30:00");
+    await lists.getByRole("button", { name: "Save", exact: true }).tap();
+    await lists.getByText("This time does not exist in your time zone. Choose another time.", { exact: true }).waitFor();
+    assert.equal(await dueDate.inputValue(), "2030-03-10");
+    await lists.getByRole("button", { name: "Clear deadline", exact: true }).tap();
     await lists.getByLabel("Description", { exact: true }).fill("");
     await lists.getByRole("button", { name: "Save", exact: true }).tap();
     await nativeCard.getByText("Pick up the green ones", { exact: true }).waitFor({ state: "detached" });
