@@ -10,6 +10,16 @@
       "already_configured": "HA Lists is already configured"
     }
   },
+  "exceptions": {
+    "not_loaded": { "message": "HA Lists is not loaded. Reload the integration and try again." },
+    "invalid_name": { "message": "Enter a list name containing letters or numbers." },
+    "list_exists": { "message": "A Local To-do list with this name already exists." },
+    "cannot_create": { "message": "Home Assistant could not create the Local To-do list." },
+    "missing_list": { "message": "This to-do list is no longer available. Refresh the lists." },
+    "not_deletable": { "message": "Only connected Local To-do lists can be deleted here." },
+    "local_only": { "message": "Only native Local To-do lists can be connected here." },
+    "confirmation_changed": { "message": "The list name changed. Reopen the deletion confirmation." }
+  },
   "options": {
     "step": {
       "init": {

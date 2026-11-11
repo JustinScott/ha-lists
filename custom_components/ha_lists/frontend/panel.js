@@ -14,6 +14,15 @@ class HaListsPanel extends HTMLElement {
     this._narrow = false;
     this._connection = null;
     this._configured = null;
+    this._management = null;
+    this._configurationRequestId = 0;
+    this._configurationSubscription = null;
+    this._listOperation = null;
+    this._listError = "";
+    this._listNotice = "";
+    this._newListOpen = false;
+    this._connectListOpen = false;
+    this._deleteListTarget = null;
     this._selected = "";
     this._items = [];
     this._error = "";
@@ -38,9 +47,16 @@ class HaListsPanel extends HTMLElement {
     this._hass = value;
     if (value?.connection && value.connection !== this._connection) {
       this.stopItemSubscription();
+      this.stopConfigurationSubscription();
       this._connection = value.connection;
+      ++this._configurationRequestId;
       ++this._requestId;
       this._configured = null;
+      this._management = null;
+      this._listOperation = null;
+      this._newListOpen = this._connectListOpen = false;
+      this._deleteListTarget = null;
+      this._listError = this._listNotice = "";
       this._selected = "";
       this._edit = null;
       this._items = [];
@@ -48,6 +64,7 @@ class HaListsPanel extends HTMLElement {
       this._error = "";
       this.render();
       this.loadConfiguration();
+      this.subscribeConfiguration();
     } else if (this._selected &&
         previous?.states?.[this._selected] !== value?.states?.[this._selected]) {
       this.loadItems();
@@ -66,11 +83,14 @@ class HaListsPanel extends HTMLElement {
   connectedCallback() {
     document.addEventListener("visibilitychange", this._onVisibility);
     this.render();
+    this.subscribeConfiguration();
     if (this._selected) this.loadItems();
   }
 
   disconnectedCallback() {
     ++this._requestId;
+    ++this._configurationRequestId;
+    this.stopConfigurationSubscription();
     this.stopItemSubscription();
     document.removeEventListener("visibilitychange", this._onVisibility);
     clearTimeout(this._filterTimer);
@@ -80,6 +100,96 @@ class HaListsPanel extends HTMLElement {
   localDay(date) {
     return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"),
       String(date.getDate()).padStart(2, "0")].join("-");
+  }
+
+  stopConfigurationSubscription() {
+    const subscription = this._configurationSubscription;
+    this._configurationSubscription = null;
+    if (subscription?.unsubscribe) Promise.resolve(subscription.unsubscribe()).catch(() => {});
+  }
+
+  async subscribeConfiguration() {
+    const connection = this._connection;
+    if (!connection || !this.isConnected || this._configurationSubscription?.connection === connection) return;
+    this.stopConfigurationSubscription();
+    const subscription = { connection, unsubscribe: null };
+    this._configurationSubscription = subscription;
+    try {
+      const unsubscribe = await connection.subscribeMessage((response) => {
+        if (this._configurationSubscription !== subscription || !this.isConnected) return;
+        ++this._configurationRequestId;
+        this.applyConfiguration(response);
+      }, { type: "ha_lists/subscribe" });
+      if (this._configurationSubscription !== subscription) await unsubscribe();
+      else subscription.unsubscribe = unsubscribe;
+    } catch {
+      if (this._configurationSubscription === subscription) this._configurationSubscription = null;
+    }
+  }
+
+  applyConfiguration(response) {
+    this._configured = response.lists || [];
+    this._management = response.management || null;
+    const previous = this._selected;
+    if (!this._configured.includes(previous)) {
+      this._selected = this._configured[0] || "";
+      this._edit = null;
+    }
+    if (previous !== this._selected || !this._selected) this.loadItems();
+    else this.render();
+  }
+
+  async manageList(request) {
+    if (!this._management || this._listOperation) return;
+    const operation = { connection: this._connection, selected: this._selected };
+    this._listOperation = operation;
+    this._listError = this._listNotice = "";
+    this.render();
+    try {
+      const response = await operation.connection.sendMessagePromise(request);
+      if (operation !== this._listOperation || operation.connection !== this._connection || !this.isConnected) return;
+      ++this._configurationRequestId;
+      this.applyConfiguration(response);
+      if (request.type === "ha_lists/list/create") {
+        this._newListOpen = false;
+        this._newListName.value = "";
+        this._listNotice = response.entity_id
+          ? "List created in Home Assistant."
+          : "List created but not ready. Recover it in Settings → Devices & services, then connect it here.";
+        if (response.entity_id && this._configured.includes(response.entity_id) && this._management &&
+            this._selected === operation.selected && !this._edit && !this._draft.trim()) {
+          this._selected = response.entity_id;
+          await this.loadItems();
+        }
+      } else if (request.type === "ha_lists/list/delete") {
+        this._deleteListTarget = null;
+        this._listNotice = response.require_restart
+          ? "List removed. Home Assistant requires a restart to finish unloading it."
+          : "List and its tasks deleted from Home Assistant.";
+      } else {
+        this._connectListOpen = false;
+        this._listNotice = request.visible ? "List connected." : "List removed from this panel. Its native tasks are unchanged.";
+      }
+    } catch (error) {
+      if (operation === this._listOperation && operation.connection === this._connection) {
+        this._listError = error?.message || String(error);
+        if (["confirmation_changed", "not_deletable", "missing_list"].includes(error?.code)) await this.loadConfiguration();
+      }
+    } finally {
+      if (operation === this._listOperation) {
+        this._listOperation = null;
+        this.render();
+      }
+    }
+  }
+
+  confirmListDeletion(target) {
+    if (this._listOperation) return;
+    this._deleteListTarget = target;
+    this._confirmListName.value = "";
+    this._listError = "";
+    this.render();
+    this._keepList.focus();
   }
 
   stopItemSubscription() {
@@ -161,15 +271,13 @@ class HaListsPanel extends HTMLElement {
 
   async loadConfiguration() {
     const connection = this._connection;
+    const requestId = ++this._configurationRequestId;
     try {
-      const response = await connection.sendMessagePromise({ type: "ha_lists/lists" });
-      if (connection !== this._connection) return;
-      this._configured = response.lists || [];
-      this._error = "";
-      this.render();
-      this.selectFirstAvailable();
+      const response = await connection.sendMessagePromise({ type: "ha_lists/state" });
+      if (connection !== this._connection || requestId !== this._configurationRequestId) return;
+      this.applyConfiguration(response);
     } catch (error) {
-      if (connection !== this._connection) return;
+      if (connection !== this._connection || requestId !== this._configurationRequestId) return;
       this._error = "Could not load list configuration: " + (error?.message || String(error));
       this._configured = [];
       this.render();
@@ -461,7 +569,15 @@ class HaListsPanel extends HTMLElement {
         header { display:flex; align-items:center; gap:8px; min-height:var(--header-height,56px); padding:0 8px; position:sticky; top:0; z-index:1; color:var(--app-header-text-color,var(--primary-text-color)); background:var(--app-header-background-color,var(--primary-background-color)); }
         header h1 { margin:0; font-size:20px; font-weight:400; }
         .layout { display:grid; grid-template-columns:minmax(220px,290px) minmax(0,1fr); gap:18px; }
-        nav,article { padding:18px; background:var(--card-background-color); border:1px solid var(--divider-color); border-radius:12px; }
+        .list-pane,article { min-width:0; padding:18px; background:var(--card-background-color); border:1px solid var(--divider-color); border-radius:12px; }
+        .list-actions { display:flex; flex-wrap:wrap; gap:var(--ha-space-2,8px); margin-top:var(--ha-space-3,12px); }
+        .list-actions button, .list-form button, .pending-lists button { min-height:44px; font:inherit; padding:var(--ha-space-2,8px); color:var(--primary-text-color); background:var(--secondary-background-color); border:1px solid var(--divider-color); border-radius:var(--ha-border-radius-md,6px); }
+        .list-actions .delete-action, .list-form .delete-action { color:var(--error-color); }
+        .list-form { flex-wrap:wrap; }
+        .list-form label { display:grid; gap:var(--ha-space-1,4px); flex-basis:100%; min-width:0; }
+        .list-form input, .list-form select { box-sizing:border-box; width:100%; min-width:0; min-height:44px; padding:var(--ha-space-2,8px); font:inherit; color:var(--primary-text-color); background:var(--card-background-color); border:1px solid var(--divider-color); }
+        .list-form p { flex-basis:100%; overflow-wrap:anywhere; }
+        .list-pane > p, .pending-lists p { overflow-wrap:anywhere; }
         nav button { display:block; width:100%; border:0; border-radius:8px; background:transparent; color:inherit; text-align:left; font:inherit; padding:12px; cursor:pointer; overflow-wrap:anywhere; }
         nav button[aria-current=true] { background:var(--secondary-background-color); font-weight:600; }
         button:focus-visible, select:focus-visible, input:focus-visible { outline:2px solid var(--primary-color); }
@@ -507,8 +623,142 @@ class HaListsPanel extends HTMLElement {
       layout.className = "layout";
       this._nav = document.createElement("nav");
       this._nav.setAttribute("aria-label", "Configured to-do lists");
+      const listPane = document.createElement("section");
+      listPane.className = "list-pane";
+      const actionButton = (text, handler) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = text;
+        button.addEventListener("click", handler);
+        return button;
+      };
+      this._listActions = document.createElement("div");
+      this._listActions.className = "list-actions";
+      this._newListButton = actionButton("New list", () => {
+        this._newListOpen = !this._newListOpen;
+        this._listError = "";
+        this.render();
+        if (this._newListOpen) this._newListName.focus();
+      });
+      this._connectListButton = actionButton("Connect existing list", () => {
+        this._connectListOpen = !this._connectListOpen;
+        this._listError = "";
+        this.render();
+        if (this._connectListOpen) {
+          this.loadConfiguration();
+          this._existingListSelect.focus();
+        }
+      });
+      this._listActions.append(this._newListButton, this._connectListButton);
+      this._newListForm = document.createElement("form");
+      this._newListForm.className = "list-form";
+      this._newListForm.setAttribute("aria-label", "Create a Local To-do list");
+      const newListLabel = document.createElement("label");
+      this._newListName = document.createElement("input");
+      this._newListName.type = "text";
+      this._newListName.required = true;
+      this._newListName.maxLength = 255;
+      this._newListName.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" && event.isComposing) event.preventDefault();
+      });
+      newListLabel.append("List name", this._newListName);
+      this._createListSubmit = document.createElement("button");
+      this._createListSubmit.type = "submit";
+      this._createListSubmit.textContent = "Create list";
+      this._cancelNewList = actionButton("Cancel new list", () => {
+        this._newListOpen = false;
+        this._listError = "";
+        this._newListName.value = "";
+        this.render();
+        this._newListButton.focus();
+      });
+      const localNotice = document.createElement("p");
+      localNotice.className = "muted";
+      localNotice.textContent = "Creates a native Home Assistant Local To-do list.";
+      this._newListForm.append(newListLabel, localNotice, this._createListSubmit, this._cancelNewList);
+      this._newListForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const name = this._newListName.value.trim();
+        if (name) this.manageList({ type: "ha_lists/list/create", name });
+      });
+      this._connectListForm = document.createElement("form");
+      this._connectListForm.className = "list-form";
+      this._connectListForm.setAttribute("aria-label", "Connect an existing Local To-do list");
+      const existingLabel = document.createElement("label");
+      this._existingListSelect = document.createElement("select");
+      this._existingListSelect.required = true;
+      this._existingListSelect.addEventListener("change", () => this.renderListManagement());
+      existingLabel.append("Existing Local To-do list", this._existingListSelect);
+      this._connectListSubmit = document.createElement("button");
+      this._connectListSubmit.type = "submit";
+      this._connectListSubmit.textContent = "Show list";
+      this._refreshLists = actionButton("Refresh available lists", () => this.loadConfiguration());
+      this._connectListForm.append(existingLabel, this._connectListSubmit, this._refreshLists);
+      this._connectListForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        if (this._existingListSelect.value) this.manageList({
+          type: "ha_lists/list/visibility", entity_id: this._existingListSelect.value, visible: true,
+        });
+      });
+      this._deleteListForm = document.createElement("form");
+      this._deleteListForm.className = "list-form";
+      this._deleteListForm.setAttribute("aria-label", "Delete list confirmation");
+      this._deleteListText = document.createElement("p");
+      this._deleteListText.id = "delete-list-warning";
+      const confirmListLabel = document.createElement("label");
+      this._confirmListName = document.createElement("input");
+      this._confirmListName.type = "text";
+      this._confirmListName.required = true;
+      this._confirmListName.maxLength = 255;
+      this._confirmListName.addEventListener("input", () => this.renderListManagement());
+      confirmListLabel.append("Type the list name to delete", this._confirmListName);
+      this._keepList = actionButton("Keep list", () => {
+        this._deleteListTarget = null;
+        this._listError = "";
+        this.render();
+        this._connectListButton.focus();
+      });
+      this._deleteListConfirm = document.createElement("button");
+      this._deleteListConfirm.type = "submit";
+      this._deleteListConfirm.className = "delete-action";
+      this._deleteListConfirm.textContent = "Delete list and all tasks";
+      this._deleteListConfirm.setAttribute("aria-describedby", "delete-list-warning");
+      this._deleteListForm.append(this._deleteListText, confirmListLabel, this._keepList, this._deleteListConfirm);
+      this._deleteListForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const target = this._deleteListTarget;
+        if (target && this._confirmListName.value === target.name) this.manageList({
+          type: "ha_lists/list/delete", entry_id: target.entry_id, confirm_name: this._confirmListName.value,
+        });
+      });
+      this._pendingLists = document.createElement("div");
+      this._pendingLists.className = "pending-lists";
+      this._listErrorElement = document.createElement("p");
+      this._listErrorElement.className = "error";
+      this._listErrorElement.setAttribute("role", "alert");
+      this._listNoticeElement = document.createElement("p");
+      this._listNoticeElement.className = "muted";
+      this._listNoticeElement.setAttribute("aria-live", "polite");
+      listPane.append(this._nav, this._listActions, this._newListForm, this._connectListForm,
+        this._deleteListForm, this._pendingLists, this._listErrorElement, this._listNoticeElement);
       const article = document.createElement("article");
       this._heading = document.createElement("h2");
+      this._selectedListActions = document.createElement("div");
+      this._selectedListActions.className = "list-actions";
+      this._hideListButton = actionButton("Remove list from panel", () => {
+        if (this._edit) {
+          this._listError = "Save or cancel the task editor before removing this list from the panel.";
+          this.render();
+          return;
+        }
+        this.manageList({ type: "ha_lists/list/visibility", entity_id: this._selected, visible: false });
+      });
+      this._deleteListButton = actionButton("Delete list…", () => {
+        const target = this._management?.deletable?.[this._selected];
+        if (target) this.confirmListDeletion(target);
+      });
+      this._deleteListButton.className = "delete-action";
+      this._selectedListActions.append(this._hideListButton, this._deleteListButton);
       this._searchControls = document.createElement("div");
       this._searchControls.className = "search";
       const searchLabel = document.createElement("label");
@@ -690,8 +940,8 @@ class HaListsPanel extends HTMLElement {
       this._editError = document.createElement("p");
       this._editError.className = "error";
       this._editError.setAttribute("role", "alert");
-      article.append(this._heading, this._searchControls, this._filters, this._sortHelp, this._filterHelp, this._form, this._editForm, this._editError, this._results);
-      layout.append(this._nav, article);
+      article.append(this._heading, this._selectedListActions, this._searchControls, this._filters, this._sortHelp, this._filterHelp, this._form, this._editForm, this._editError, this._results);
+      layout.append(listPane, article);
       this._main.append(layout);
       this.shadowRoot.replaceChildren(style, header, this._main);
     }
@@ -719,6 +969,7 @@ class HaListsPanel extends HTMLElement {
       navChildren.push(p);
     }
     this._nav.replaceChildren(...navChildren);
+    this.renderListManagement();
     this._heading.textContent = selected?.attributes?.friendly_name || "Select a list";
     this._searchControls.hidden = !selected;
     this._clearSearch.disabled = !this._search;
@@ -838,6 +1089,64 @@ class HaListsPanel extends HTMLElement {
     this._cancelTitle.disabled = Boolean(edit?.saving);
     this._editError.hidden = !edit?.error;
     this._editError.textContent = edit?.error || "";
+  }
+
+  renderListManagement() {
+    const management = this._management;
+    const busy = Boolean(this._listOperation);
+    this._listActions.hidden = !management;
+    this._newListButton.disabled = this._connectListButton.disabled = busy;
+    this._newListForm.hidden = !management || !this._newListOpen;
+    this._newListName.readOnly = busy;
+    this._createListSubmit.disabled = this._cancelNewList.disabled = busy;
+    this._connectListForm.hidden = !management || !this._connectListOpen;
+    const available = (management?.available || []).filter((item) => !this._configured?.includes(item.entity_id));
+    const optionKey = JSON.stringify(available);
+    if (optionKey !== this._existingOptionKey) {
+      this._existingOptionKey = optionKey;
+      const selected = this._existingListSelect.value;
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = "Choose an existing list";
+      const options = [placeholder];
+      for (const item of available) {
+        const option = document.createElement("option");
+        option.value = item.entity_id;
+        option.textContent = `${item.name} (${item.entity_id})`;
+        options.push(option);
+      }
+      this._existingListSelect.replaceChildren(...options);
+      this._existingListSelect.value = available.some((item) => item.entity_id === selected) ? selected : "";
+    }
+    this._existingListSelect.disabled = this._refreshLists.disabled = busy;
+    this._connectListSubmit.disabled = busy || !this._existingListSelect.value;
+    this._selectedListActions.hidden = !management || !this._selected;
+    this._hideListButton.disabled = this._deleteListButton.disabled = busy;
+    this._deleteListButton.hidden = !management?.deletable?.[this._selected];
+    this._deleteListForm.hidden = !management || !this._deleteListTarget;
+    this._deleteListText.textContent = this._deleteListTarget
+      ? `Delete “${this._deleteListTarget.name}” and ALL its tasks from Home Assistant? Other dashboards and automations using the list will lose access. This cannot be undone here.` : "";
+    this._confirmListName.readOnly = busy;
+    this._keepList.disabled = busy;
+    this._deleteListConfirm.disabled = busy || !this._deleteListTarget || this._confirmListName.value !== this._deleteListTarget.name;
+    this._pendingLists.hidden = !management?.pending?.length;
+    const pending = [];
+    for (const item of management?.pending || []) {
+      const p = document.createElement("p");
+      p.textContent = `Created list awaiting setup: ${item.name}. Check Settings → Devices & services. `;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.disabled = busy;
+      button.textContent = "Delete this unavailable list…";
+      button.addEventListener("click", () => this.confirmListDeletion(item));
+      p.append(button);
+      pending.push(p);
+    }
+    this._pendingLists.replaceChildren(...pending);
+    this._listErrorElement.hidden = !this._listError;
+    this._listErrorElement.textContent = this._listError;
+    this._listNoticeElement.hidden = !this._listNotice;
+    this._listNoticeElement.textContent = this._listNotice;
   }
 }
 if (!customElements.get("ha-lists-panel")) {

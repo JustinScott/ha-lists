@@ -11,6 +11,7 @@ import { verifyTaskFilters } from "./filter-checks.mjs";
 import { verifyTaskSearch } from "./search-checks.mjs";
 import { verifyPanelNavigation } from "./navigation-checks.mjs";
 import { verifyTaskSorting } from "./sort-checks.mjs";
+import { verifyListManagement } from "./list-checks.mjs";
 
 const docker = promisify(execFile);
 const image = "ghcr.io/home-assistant/home-assistant:2026.11.1";
@@ -332,6 +333,7 @@ test("native To-do and HA Lists share task changes across browser sessions", { t
     await nativeCard.locator(".completed").getByText(renamed, { exact: true }).waitFor({ state: "detached" });
     assert.equal(await lists.getByRole("checkbox", { name: `Complete ${renamed}`, exact: true }).count(), 1);
     assert.equal(await nativeCard.getByText(renamed, { exact: true }).count(), 1);
+    await verifyListManagement({ browser, page: lists, native, base, token, post, openPanel, username, password, entityId });
   } catch (error) {
     if (lists) process.stderr.write(await lists.locator("ha-lists-panel").ariaSnapshot().catch(() => "") + "\n");
     const logs = created && await docker("docker", ["logs", "--tail", "50", name],

@@ -329,12 +329,61 @@ other todo entities
 
 ## 12. Approved architecture decisions and open implementation details
 
+### Approved Local To-do list management (2026-11-11)
+
+- Administrators can create multiple lists from the panel. Use Home Assistant's
+  native Local To-do user configuration flow, then resolve the resulting entity
+  through the entity registry; never guess an entity ID from the list title.
+  Automatically add the actual entity to HA Lists' persisted selection.
+- Administrators can connect existing Local To-do lists or remove lists from the
+  panel. Removing a selection preserves the native list, tasks and task UIDs.
+  New panel connections are Local To-do only; preserve legacy provider bindings.
+  Native task actions retain their existing HA permissions for ordinary users.
+- Administrators may permanently delete **any connected Local To-do list**,
+  including lists created outside HA Lists. Show a separate destructive action,
+  explain that every task is deleted and other dashboards/automations lose the
+  list, default focus to Keep list, and require typing its current native title.
+  Validate the stable native config-entry identity and current title on the
+  server, and use native config-entry removal and its cleanup/restart result.
+  Never delete another provider or an unrelated, unconnected native list.
+- Reject malformed/unauthorized commands server-side. Serialize management
+  commands, prevent repeated UI submissions, retain drafts on errors, and avoid
+  switching an actively edited task or stealing focus after a late create reply.
+- Native To-do remains authoritative. Preserve all other tasks/configuration.
+  Failed native setup leaves a recoverable native entry, never destructive
+  rollback: show its pending identity, direct recovery through HA Settings and
+  allow explicit confirmed cancellation. After recovery, connect its actual
+  entity. Removing HA Lists itself leaves native lists and their tasks intact.
+- Keep selected entity IDs in config-entry options. Schema 1.2 adds optional
+  `created_list_entries` in entry data to track creation/recovery identity, not
+  task ownership. Migrate older entries without changing data or selections.
+- Authenticated configuration snapshots filter list visibility by HA read
+  permissions; management metadata and operations are admin-only. Notify open
+  panels of option changes; invalidate stale reads/subscriptions and preserve
+  task drafts where the selection survives. Entry update listeners clean up on
+  unload; WebSocket subscriptions are connection-owned and clean up on explicit
+  unsubscribe/connection close, receiving empty state when HA Lists unloads.
+- Verification spans panel behavior tests for controls/drafts/races, actual HA
+  WebSocket/config-flow/entity/storage tests for authorization and identity,
+  restart persistence, and installed-HA Playwright for native synchronization,
+  independent lists, hide/reconnect, typed cancellation/deletion, native lists
+  created outside the panel, cross-session updates and responsive layout.
+
 **Approved:** Extended task data and suggestion history reside in Home Assistant-managed local storage. Initial provider portability is Option A (rebind without task migration). Option B remains a documented future goal, not an initial-release requirement. Package as one HACS-compatible custom integration with a bundled dedicated frontend panel; no standalone server or add-on is required.
+
+**Third-party direction under discussion (2026-11-11):** The user's current preference
+is explicit import/export for third-party lists, without live on-demand editing of
+those external lists. Revisit and approve that design in a future discussion;
+import/export is not part of the current Local To-do list-management milestone.
+Do not add new third-party management workflows or silently remove existing
+provider bindings, tasks, or supported behavior while that decision is pending.
+Earlier provider-portability decisions above describe the existing architecture;
+this preference does not yet authorize replacing that architecture or migrating data.
 
 **Still to determine during implementation:**
 
 - Final integration domain/repository name.
-- Whether Local To-do list creation is handled through HA's existing configuration flow or an optional guided UI.
+- Local To-do creation is approved through HA Lists' UI using HA's native configuration flow (see the list-management requirements below).
 - Metadata persistence strategy and item identity mapping for providers without stable IDs.
 - Exact supported HA version baseline and compatibility matrix.
 - Whether attachments are metadata-only links initially or require a secure local file-management component.

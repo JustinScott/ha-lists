@@ -4,41 +4,35 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import voluptuous as vol
-from homeassistant.auth.permissions.const import POLICY_READ
-from homeassistant.components import panel_custom, websocket_api
+from homeassistant.components import panel_custom
 from homeassistant.components.frontend import async_remove_panel
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 
-from .const import DOMAIN
+from .const import CONF_CREATED_ENTRIES, DOMAIN, SIGNAL_LISTS_UPDATED
+from .list_websocket import register_commands
 
 PANEL_PATH = "ha-lists"
 ASSET_URL = "/ha_lists_static"
 ASSETS_REGISTERED = f"{DOMAIN}_assets_registered"
 PANEL_ELEMENT = "ha-lists-panel"
-CONF_LISTS = "lists"
 
 
-@websocket_api.websocket_command({vol.Required("type"): "ha_lists/lists"})
-@websocket_api.async_response
-async def ws_lists(
-    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
-) -> None:
-    """Return configured list IDs for an authenticated frontend."""
-    entries = hass.config_entries.async_entries(DOMAIN)
-    selected = (
-        entries[0].options.get(CONF_LISTS, [])
-        if entries and hass.data.get(DOMAIN)
-        else []
-    )
-    visible = [
-        entity_id
-        for entity_id in selected
-        if connection.user.permissions.check_entity(entity_id, POLICY_READ)
-    ]
-    connection.send_result(msg["id"], {"lists": visible})
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Add optional management identity without changing list/task bindings."""
+    if entry.version == 1 and entry.minor_version < 2:
+        hass.config_entries.async_update_entry(
+            entry,
+            data={CONF_CREATED_ENTRIES: [], **entry.data},
+            minor_version=2,
+        )
+
+
+async def async_entry_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Wake connected panels after configuration/options changes."""
+    async_dispatcher_send(hass, SIGNAL_LISTS_UPDATED)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -55,7 +49,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
                 )
             ]
         )
-        websocket_api.async_register_command(hass, ws_lists)
+        register_commands(hass)
         # HTTP routes and WebSocket commands live for the entire HA process.
         hass.data[ASSETS_REGISTERED] = True
     await panel_custom.async_register_panel(
@@ -68,9 +62,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
         require_admin=False,
     )
     hass.data[DOMAIN] = True
+    entry.async_on_unload(entry.add_update_listener(async_entry_updated))
+    async_dispatcher_send(hass, SIGNAL_LISTS_UPDATED)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Remove the sidebar panel when the entry unloads."""
     if hass.data.pop(DOMAIN, None):
         async_remove_panel(hass, PANEL_PATH)
+        async_dispatcher_send(hass, SIGNAL_LISTS_UPDATED)

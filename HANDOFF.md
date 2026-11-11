@@ -1,5 +1,52 @@
 # HA Lists — handoff for a new local Codex session
 
+## Local list management update (2026-11-11)
+
+- New panel controls let administrators create native Local To-do lists, connect
+  existing Local To-do entities, hide selections without changing tasks, and
+  permanently delete any connected Local To-do list after typing its native
+  title. This includes lists created outside HA Lists. The warning explains all
+  tasks are deleted throughout HA. Ordinary task permissions are unchanged.
+- `list_management.py` delegates creation/removal to native config-entry APIs,
+  resolves actual entity-registry identity, preserves unrelated configuration,
+  and retains failed-setup identities for recovery or confirmed cancellation.
+  Schema 1.2 adds optional `created_list_entries` in data; selected entities stay
+  in options. Removing HA Lists leaves native lists/tasks intact.
+- `list_websocket.py` provides validated admin commands and read-filtered state
+  subscriptions. Config operations serialize through a lock. Entry listeners
+  unload automatically; subscriptions belong to authenticated connections and
+  clean up on unsubscribe/close. Unload sends empty configuration state.
+- The panel preserves forms/drafts on failures and unchanged selections, ignores
+  stale reads/replies, and avoids focus/list stealing after late creation. New
+  connections are Local To-do only; existing provider bindings remain intact.
+- The user's current third-party preference is explicit import/export without
+  live editing, deferred to a future design discussion. No import/export or
+  new third-party management is implemented. See specs section 12.
+- Guidance review: native [config flows](https://contributors.home-assistant.io/core/integrations/config-flow/)
+  and [config entries](https://contributors.home-assistant.io/core/integrations/config-entries/)
+  require lifecycle APIs rather than direct storage editing; implementation uses
+  the Local To-do flow, entity registry and native removal. Actual HA tests and
+  restart tests verify identities/tasks and cleanup. Native config/WebSocket
+  source on both current Core and pinned HA 2026.11.1 confirms admin permissions;
+  authenticated HA tests verify rejection, schema validation and filtered state.
+  [Custom-panel guidance](https://contributors.home-assistant.io/frontend/custom-ui/panel/)
+  maps to native HA header/narrow state, themed controls, keyboard focus and
+  mobile Playwright checks. Core AGENTS/integration knowledge skill, current
+  [HACS requirements](https://www.hacs.xyz/docs/publish/integration/), and official
+  [pytest-homeassistant](https://github.com/home-assistant/core/tree/dev/packages/pytest-homeassistant)
+  guidance were consulted; no dependencies or minimum HA version changed.
+- English backend config/options/exception translations are bundled; run
+  `python dev/sync_translations.py` after changing strings. The custom panel
+  remains English, apart from native HA shell controls.
+- Local verification: Ruff/format/syntax, 39 Python tests (99.08% integration
+  coverage), 54 panel tests, and disposable-HA Playwright passed. Browser checks
+  cover native list/task identity, two independent lists, existing native list
+  connection/deletion, hide/reconnect, cancellation, cross-session changes and
+  page reload. Real Android keyboard/IME remains an unverified manual check.
+  Check the GitHub Validate run for the current commit separately.
+
+The previous local-development summary and historical snapshot follow below.
+
 ## Local development update (2026-11-11)
 
 - Local Windows/WSL setup is installed and verified. Use `dev/local.ps1 check`

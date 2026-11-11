@@ -15,7 +15,8 @@ async def test_config_flow_creates_local_entry(hass):
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
     assert result["type"] is data_entry_flow.FlowResultType.CREATE_ENTRY
     assert result["title"] == "HA Lists"
-    assert result["data"] == {}
+    assert result["data"] == {"created_list_entries": []}
+    assert result["result"].minor_version == 2
 
 
 async def test_config_flow_rejects_duplicate_instance(hass):

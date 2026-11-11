@@ -101,6 +101,10 @@ state is retained. No cloud account or cloud test tasks are transferred.
 
 ## Where the test infrastructure lives
 
+After changing integration `strings.json`, run `python dev/sync_translations.py`
+to regenerate the bundled `translations/en.json`. The packaging tests check that
+they match; this custom integration does not require Core's translation scripts.
+
 - `dev/`: local setup/check scripts, this Windows/WSL guide, and sample HA config.
 - `tests/`: packaging and basic contract checks.
 - `tests_ha/`: HA fixtures, lifecycle, authorization, malformed requests, storage.

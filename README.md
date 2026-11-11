@@ -3,9 +3,9 @@
 Local-first Home Assistant list manager, under active development.
 
 **Status: Milestone 1 in progress.** The integration currently registers a
-dedicated **Lists** sidebar panel. The panel discovers native `todo.*` entities
-available in the signed-in Home Assistant frontend and lets you choose which
-entity to inspect, add tasks to, and mark tasks complete.
+dedicated **Lists** sidebar panel. Administrators can create and manage native
+Local To-do lists. Users can choose a connected list to inspect, add tasks to,
+and mark tasks complete.
 
 ## Development installation (not production-ready)
 
@@ -62,19 +62,27 @@ addresses, or real Home Assistant configuration.
 ## Configuration and everyday use (development preview)
 
 1. Install this integration on a **development** Home Assistant instance, restart it, and add **HA Lists** under Settings → Devices & services.
-2. Open the HA Lists integration's **Configure** options and select one or more existing native `todo` entities. Create those lists through their respective Home Assistant provider integrations first; HA Lists does not create provider lists.
+2. Open **Lists**. Administrators can use **New list** to create native Local To-do lists, or **Connect existing list** to show existing Local To-do entities. The integration's **Configure** options also retain the existing native entity selection workflow.
 3. Open the **Lists** sidebar entry. Select a list by its displayed name to inspect, add, or complete tasks. Select a task title to edit or delete it. The editor offers descriptions, due dates, and due times where the provider supports them. Due times use the browser time zone shown in the editor. Clear deadline removes both date and time. Delete asks you to confirm the task first.
 
 The integration requires Home Assistant's frontend, HTTP, panel, and to-do components. It uses Home Assistant's authenticated frontend connection; there is no separate HA Lists account or public server. The initial configuration does not require a cloud provider.
 
 ## Removal (development preview)
 
-Remove the HA Lists integration entry from Settings → Devices & services, then remove the `custom_components/ha_lists` directory from the development configuration and restart Home Assistant. If the panel remains visible, refresh the browser and verify that the integration entry is gone. **Do not delete the underlying native to-do integrations or entities:** HA Lists only selects and displays them.
+Remove the HA Lists integration entry from Settings → Devices & services, then remove the `custom_components/ha_lists` directory from the development configuration and restart Home Assistant. If the panel remains visible, refresh the browser and verify that the integration entry is gone. Native lists and tasks remain, including lists created through HA Lists.
+
+Administrators can **Remove list from panel** without deleting its data. The separate
+**Delete list…** action permanently deletes any connected Local To-do list and all
+its tasks throughout Home Assistant, including lists created outside HA Lists.
+It requires typing the native list name and confirming. Keep a backup if needed;
+there is no undo here. Ordinary users do not see list-management controls.
+If native creation cannot finish setup, recover that list in HA Settings and
+connect it, or explicitly confirm deletion of the pending list.
 
 ## Supported features and current limitations
 
-- **Available:** One local HA Lists config entry; select multiple existing native `todo` entities; named-list sidebar; task retrieval, creation, renaming, completion, reopening, and deletion; task title/description search; All/Active/Completed/Due today/Overdue filters; newest/oldest active-task sorting; loading and error messages.
-- **Not yet available:** Creating provider lists; rich metadata; autocomplete/history; Assist-specific routing; provider migration.
+- **Available:** One local HA Lists config entry; administrator creation, connection, hiding and confirmed deletion of native Local To-do lists; named-list sidebar; task retrieval, creation, renaming, completion, reopening, and deletion; task title/description search; All/Active/Completed/Due today/Overdue filters; newest/oldest active-task sorting; loading and error messages.
+- **Not yet available:** Creating/deleting third-party lists; rich metadata; autocomplete/history; Assist-specific routing; provider migration or import/export. Third-party import/export versus live editing remains a future design discussion; existing bindings and data are preserved.
 
 The underlying `todo` integrations remain the source of truth for tasks. Removing HA Lists does not intentionally remove provider tasks. Provider capabilities vary; not every provider exposes completed items or rich task fields.
 

@@ -11,7 +11,7 @@ const deferred = () => {
   return { promise, resolve, reject };
 };
 
-async function setup({ lists = ["todo.groceries"], items = [], service, readItems, subscribeItems, supportedFeatures = 6, clock } = {}) {
+async function setup({ lists = ["todo.groceries"], items = [], service, readItems, subscribeItems, subscribeConfiguration, management = null, manageLists, supportedFeatures = 6, clock } = {}) {
   const dom = new JSDOM("<!doctype html><html><body></body></html>", {
     runScripts: "outside-only", pretendToBeVisual: true,
   });
@@ -37,11 +37,13 @@ async function setup({ lists = ["todo.groceries"], items = [], service, readItem
     states,
     connection: {
       async subscribeMessage(callback, request) {
+        if (request.type === "ha_lists/subscribe") return subscribeConfiguration ? subscribeConfiguration(callback) : () => {};
         return subscribeItems ? subscribeItems(callback, request) : () => {};
       },
       async sendMessagePromise(request) {
         requests.push(request);
-        if (request.type === "ha_lists/lists") return { lists };
+        if (request.type === "ha_lists/state") return { lists: [...lists], management };
+        if (request.type.startsWith("ha_lists/list/") && manageLists) return manageLists(request);
         if (request.type === "todo/item/list") {
           return { items: await (readItems?.(request.entity_id) ?? items.map((item) => ({ ...item }))) };
         }
@@ -84,6 +86,167 @@ function change(window, checkbox, checked) {
   checkbox.checked = checked;
   checkbox.dispatchEvent(new window.Event("change", { bubbles: true }));
 }
+
+test("creating a native list uses its returned identity and suppresses repeated submits", async () => {
+  const pending = deferred();
+  const management = { available: [], deletable: {}, pending: [] };
+  const { panel, window, requests, hass } = await setup({ lists: [], management, manageLists: () => pending.promise });
+  panel._newListButton.click();
+  assert.equal(panel.shadowRoot.activeElement, panel._newListName);
+  panel._newListName.value = "New sample";
+  panel._newListForm.dispatchEvent(new window.Event("submit", { cancelable: true }));
+  panel._newListForm.dispatchEvent(new window.Event("submit", { cancelable: true }));
+  assert.equal(requests.filter((request) => request.type === "ha_lists/list/create").length, 1);
+  assert.equal(panel._createListSubmit.disabled, true);
+  hass.states["todo.native_assigned_2"] = { entity_id: "todo.native_assigned_2", state: "0", attributes: { friendly_name: "New sample", supported_features: 6 } };
+  pending.resolve({ lists: ["todo.native_assigned_2"], management, entity_id: "todo.native_assigned_2", created_entry_id: "native-id" });
+  await tick(); await tick();
+  assert.equal(panel._selected, "todo.native_assigned_2");
+  assert.equal(panel._newListForm.hidden, true);
+  assert.equal(panel._newListName.value, "");
+  assert.match(panel._heading.textContent, /New sample/);
+  panel.remove(); window.close();
+});
+
+test("failed list creation retains its draft and can retry without touching tasks", async () => {
+  let fail = true;
+  const management = { available: [], deletable: {}, pending: [] };
+  const { panel, window, calls } = await setup({ management, items: [{ uid: "a", summary: "Keep task" }],
+    manageLists: async () => {
+      if (fail) throw new Error("Synthetic duplicate list");
+      return { lists: ["todo.groceries"], management, entity_id: null, created_entry_id: "pending-id" };
+    } });
+  panel._newListButton.click();
+  panel._newListName.value = "Retained list name";
+  panel._newListForm.dispatchEvent(new window.Event("submit", { cancelable: true }));
+  await tick(); await tick();
+  assert.equal(panel._newListName.value, "Retained list name");
+  assert.equal(panel._newListForm.hidden, false);
+  assert.match(panel._listErrorElement.textContent, /Synthetic duplicate list/);
+  assert.deepEqual(visibleTitles(panel), ["Keep task"]);
+  fail = false;
+  panel._newListForm.dispatchEvent(new window.Event("submit", { cancelable: true }));
+  await tick(); await tick();
+  assert.match(panel._listNoticeElement.textContent, /created but not ready/);
+  assert.equal(calls.length, 0);
+  panel.remove(); window.close();
+});
+
+test("existing lists connect and hide independently of destructive deletion", async () => {
+  const lists = ["todo.groceries"];
+  const management = { available: [{ entity_id: "todo.hardware", name: "<img src=x>" }], deletable: {}, pending: [] };
+  const { panel, window, calls, requests } = await setup({ lists, management,
+    manageLists: async (request) => {
+      if (request.visible) lists.push(request.entity_id);
+      else lists.splice(lists.indexOf(request.entity_id), 1);
+      return { lists: [...lists], management };
+    } });
+  assert.equal(panel._deleteListButton.hidden, true);
+  panel._connectListButton.click();
+  await tick();
+  panel._existingListSelect.value = "todo.hardware";
+  panel._existingListSelect.dispatchEvent(new window.Event("change"));
+  panel._connectListForm.dispatchEvent(new window.Event("submit", { cancelable: true }));
+  await tick(); await tick();
+  assert.equal(panel._configured.includes("todo.hardware"), true);
+  assert.equal(panel.shadowRoot.querySelector("img"), null);
+  panel._hideListButton.click();
+  await tick(); await tick();
+  assert.deepEqual([...panel._configured], ["todo.hardware"]);
+  assert.match(panel._listNoticeElement.textContent, /native tasks are unchanged/);
+  assert.equal(requests.filter((request) => request.type === "ha_lists/list/delete").length, 0);
+  assert.equal(calls.length, 0);
+  panel.remove(); window.close();
+});
+
+test("list deletion requires typed confirmation, keeps task drafts on cancel/failure and retains the target ID", async () => {
+  const pending = deferred();
+  let outcome = pending.promise;
+  const target = { entry_id: "managed-native", name: "Groceries" };
+  const management = { available: [], deletable: { "todo.groceries": target }, pending: [] };
+  const { panel, window, calls, requests } = await setup({ management,
+    items: [{ uid: "a", summary: "Keep task" }], manageLists: () => outcome });
+  const title = openRename(panel, "Keep task");
+  title.value = "Unsent editor";
+  panel._deleteListButton.click();
+  assert.equal(panel.shadowRoot.activeElement, panel._keepList);
+  assert.equal(panel._deleteListConfirm.disabled, true);
+  panel._keepList.click();
+  assert.equal(title.value, "Unsent editor");
+  assert.equal(title.form.hidden, false);
+  panel._deleteListButton.click();
+  panel._confirmListName.value = "Wrong name";
+  panel._confirmListName.dispatchEvent(new window.Event("input"));
+  panel._deleteListForm.dispatchEvent(new window.Event("submit", { cancelable: true }));
+  assert.equal(requests.filter((request) => request.type === "ha_lists/list/delete").length, 0);
+  panel._confirmListName.value = "Groceries";
+  panel._confirmListName.dispatchEvent(new window.Event("input"));
+  panel._deleteListForm.dispatchEvent(new window.Event("submit", { cancelable: true }));
+  panel._deleteListForm.dispatchEvent(new window.Event("submit", { cancelable: true }));
+  assert.equal(requests.filter((request) => request.type === "ha_lists/list/delete").length, 1);
+  pending.reject(new Error("Synthetic deletion failure"));
+  await tick(); await tick();
+  assert.equal(panel._confirmListName.value, "Groceries");
+  assert.equal(title.value, "Unsent editor");
+  assert.deepEqual(visibleTitles(panel), ["Keep task"]);
+  outcome = Promise.resolve({ lists: [], management: { available: [], deletable: {}, pending: [] }, require_restart: true });
+  panel._deleteListForm.dispatchEvent(new window.Event("submit", { cancelable: true }));
+  await tick(); await tick();
+  assert.equal(panel._deleteListForm.hidden, true);
+  assert.equal(panel._selected, "");
+  assert.match(panel._listNoticeElement.textContent, /requires a restart/);
+  const sent = requests.filter((request) => request.type === "ha_lists/list/delete").at(-1);
+  assert.equal(sent.entry_id, "managed-native");
+  assert.equal(sent.confirm_name, "Groceries");
+  assert.equal(calls.length, 0);
+  panel.remove(); window.close();
+});
+
+test("a late list creation does not switch away from another list or steal task focus", async () => {
+  const pending = deferred();
+  const management = { available: [], deletable: {}, pending: [] };
+  const { panel, window } = await setup({ lists: ["todo.groceries", "todo.hardware"], management, manageLists: () => pending.promise });
+  panel._newListButton.click();
+  panel._newListName.value = "Late list";
+  panel._newListForm.dispatchEvent(new window.Event("submit", { cancelable: true }));
+  panel.shadowRoot.querySelectorAll("nav button")[1].click();
+  await tick(); await tick();
+  panel._input.value = "Keep draft here";
+  panel._input.dispatchEvent(new window.Event("input"));
+  panel._input.tabIndex = 0;
+  panel._input.focus();
+  pending.resolve({ lists: ["todo.groceries", "todo.hardware", "todo.created"], management, entity_id: "todo.created" });
+  await tick(); await tick();
+  assert.equal(panel._selected, "todo.hardware");
+  assert.equal(panel._input.value, "Keep draft here");
+  assert.equal(panel.shadowRoot.activeElement, panel._input);
+  panel.remove(); window.close();
+});
+
+test("configuration snapshots preserve drafts, ignore stale reads and clean up on disconnect", async () => {
+  let notify;
+  let stopped = false;
+  const { panel, window, hass } = await setup({ items: [{ uid: "a", summary: "Task" }],
+    subscribeConfiguration(callback) { notify = callback; return () => { stopped = true; }; } });
+  assert.equal(panel._listActions.hidden, true);
+  const title = openRename(panel, "Task");
+  title.value = "Unsent editor";
+  const pending = deferred();
+  const originalSend = hass.connection.sendMessagePromise;
+  hass.connection.sendMessagePromise = (request) => request.type === "ha_lists/state" ? pending.promise : originalSend(request);
+  panel.loadConfiguration();
+  notify({ lists: ["todo.groceries", "todo.hardware"], management: null });
+  pending.resolve({ lists: [], management: null });
+  await tick(); await tick();
+  assert.deepEqual([...panel._configured], ["todo.groceries", "todo.hardware"]);
+  assert.equal(title.value, "Unsent editor");
+  assert.equal(title.form.hidden, false);
+  panel.remove();
+  assert.equal(stopped, true);
+  notify({ lists: [], management: null });
+  assert.deepEqual([...panel._configured], ["todo.groceries", "todo.hardware"]);
+  window.close();
+});
 function selectSort(window, panel, value) {
   panel._sortSelect.value = value;
   panel._sortSelect.dispatchEvent(new window.Event("change", { bubbles: true }));
@@ -648,7 +811,7 @@ test("a failed delete leaves the task visible and allows retry", async () => {
   deleteButton(panel, "Delete task").click();
   await tick();
   assert.equal(rows(panel)[0].textContent, "Apples");
-  assert.match(panel.shadowRoot.querySelector('[role="alert"]').textContent, /Unable to delete task.*provider offline/);
+  assert.match(panel._editError.textContent, /Unable to delete task.*provider offline/);
   assert.equal(deleteButton(panel, "Delete task").disabled, false);
 });
 
@@ -719,7 +882,7 @@ test("an external description change blocks overwriting that field and preserves
   title.form.requestSubmit();
   await tick();
   assert.equal(description.value, "Draft note");
-  assert.match(panel.shadowRoot.querySelector('[role="alert"]').textContent, /changed elsewhere/);
+  assert.match(panel._editError.textContent, /changed elsewhere/);
   assert.equal(calls.length, 0);
 });
 
@@ -773,13 +936,13 @@ test("datetime-only providers reject date-only edits and preserve a rejected dra
   date.value = "2030-07-06";
   title.form.requestSubmit();
   await tick();
-  assert.match(panel.shadowRoot.querySelector('[role="alert"]').textContent, /requires a time/);
+  assert.match(panel._editError.textContent, /requires a time/);
   assert.equal(calls.length, 0);
   time.value = "10:30";
   date.value = "";
   title.form.requestSubmit();
   await tick();
-  assert.match(panel.shadowRoot.querySelector('[role="alert"]').textContent, /Choose a due date/);
+  assert.match(panel._editError.textContent, /Choose a due date/);
   assert.equal(time.value, "10:30");
   assert.equal(calls.length, 0);
 });
@@ -791,14 +954,14 @@ test("structured Home Assistant errors show the message and preserve the draft",
   const input = panel.shadowRoot.querySelector("ha-input");
   input.value = "Keep this draft";
   input.dispatchEvent(new window.Event("input"));
-  panel.shadowRoot.querySelector("form").dispatchEvent(new window.Event("submit", { cancelable: true }));
+  panel._form.dispatchEvent(new window.Event("submit", { cancelable: true }));
   await tick(); await tick();
   assert.equal(input.value, "Keep this draft");
   assert.match(panel.shadowRoot.textContent, /Unable to add task: Synthetic provider unavailable/);
 });
 
 function selectFilter(window, panel, value) {
-  const select = panel.shadowRoot.querySelector("select");
+  const select = panel._filterSelect;
   select.value = value;
   select.dispatchEvent(new window.Event("change", { bubbles: true }));
 }
@@ -829,7 +992,7 @@ test("All, Active and Completed preserve provider order, drafts and the selected
   assert.equal(calls.length, 0);
   panel.shadowRoot.querySelectorAll("nav button")[1].click();
   await tick(); await tick();
-  assert.equal(panel.shadowRoot.querySelector("select").value, "completed");
+  assert.equal(panel._filterSelect.value, "completed");
   selectFilter(window, panel, "all");
   assert.deepEqual(visibleTitles(panel), ["Second active", "First active", "Completed task"]);
   assert.deepEqual(items.map((item) => item.uid), ["a", "c", "b"]);

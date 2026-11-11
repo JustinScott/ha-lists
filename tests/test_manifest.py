@@ -18,3 +18,12 @@ def test_manifest_has_local_config_flow() -> None:
 def test_translation_source_is_valid_json() -> None:
     strings = json.loads((INTEGRATION / "strings.json").read_text())
     assert "user" in strings["config"]["step"]
+
+
+def test_bundled_english_matches_translation_source() -> None:
+    """Prevent stale config/options and exception messages in installed HA."""
+    source = json.loads((INTEGRATION / "strings.json").read_text(encoding="utf-8"))
+    bundled = json.loads(
+        (INTEGRATION / "translations" / "en.json").read_text(encoding="utf-8")
+    )
+    assert bundled == source
