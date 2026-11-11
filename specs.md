@@ -127,7 +127,7 @@ other todo entities
 
 ## 8. AI-assisted development rules
 
-- Read current Home Assistant developer docs, relevant ADRs, integration quality rules, and repository instructions **before changing architecture or code**; do not assume remembered APIs are current.
+- Read current Home Assistant developer docs, relevant ADRs, integration quality rules, and repository instructions **before every code change**, following the mandatory per-change guidance review below; do not assume remembered APIs are current.
 - Follow the repository's `AGENTS.md` (to be created) and this `specs.md`; these are project-specific instructions, not substitutes for upstream Home Assistant rules.
 - Make small, reviewable, test-backed changes; preserve existing behavior unless an approved requirement changes it.
 - Never invent HA APIs, services, entity capabilities, imports or frontend hooks. Verify against the supported HA version or existing source/tests.
@@ -377,6 +377,47 @@ other todo entities
 - Approved product requirements and security boundaries in this specification remain authoritative for project scope; changes need approval. For implementation details, consult current official Home Assistant contributor documentation, architecture decisions, Core `AGENTS.md` and relevant official AI integration skill, applicable integration quality-scale rules, supported HA APIs, and the framework documentation.
 - Prefer proven Gold/Platinum integrations as implementation examples, but do not copy features irrelevant to Lists. Core-only rules and commands are guidance rather than automatically executable requirements for this HACS custom component. Record conflicts and applicability decisions.
 - Use modern, idiomatic Python: explicit concrete type annotations, simple maintainable modules, predictable exception handling, minimal dependencies, Ruff lint/format, pytest, and async-safe HA patterns. Never block the event loop with synchronous network or disk work; clean up listeners and registered resources on unload.
+
+### Mandatory per-change Home Assistant guidance review
+
+This is a required acceptance gate for **every new feature and every code
+change**, including bug fixes, refactors, frontend/backend changes, tests,
+development tooling, CI, dependency updates and generated code. A review from an
+earlier feature or chat is not sufficient. Apply the gate to each coherent change;
+repeat the affected review when its scope or implementation approach changes.
+
+1. **Reconsult before editing.** Open and read the current official guidance for
+   the affected areas, including applicable HA developer/contributor docs, ADRs,
+   quality-scale rules, Core agent instructions and integration knowledge skill.
+   Consult current HACS and official test-framework guidance where relevant.
+   Verify API/component contracts against the declared supported HA release as
+   well as current guidance; do not silently raise the minimum version or apply
+   Core-only procedures to a custom integration.
+2. **Map requirements to the work.** Identify the applicable requirements and
+   concrete acceptance checks before implementation. Review the surrounding HA
+   integration surface, not just the feature's immediate logic. For panel work,
+   this includes the header/sidebar, HA-supplied layout state, themes, keyboard
+   access and mobile navigation. For other changes, include relevant lifecycle,
+   authorization, async safety, native provider contracts and storage behavior.
+   Existing code is not evidence that these requirements were already met.
+3. **Verify compliance after editing.** Compare the final diff and resulting
+   behavior with that requirement list. Add or extend tests at the layers that
+   demonstrate the required behavior, including installed-HA browser checks for
+   shell/navigation interactions. Reading a document, importing a native
+   component, passing syntax checks or obtaining green CI alone does not prove
+   compliance with its behavioral requirements.
+4. **Record evidence and resolve gaps.** Include a concise
+   **guidance → requirement → implementation → verification** mapping in the
+   change summary or PR description, with source links and exact test outcomes.
+   State why potentially relevant guidance is inapplicable and identify anything
+   unverified. Fix applicable gaps before calling the change complete. If a
+   requirement conflicts with approved scope or project decisions, explain the
+   conflict and obtain approval before changing those decisions. Do not waive a
+   requirement merely because the omission predates the current change.
+
+Keep this evidence specific to the change; do not copy upstream documents into
+the repository. The review must demonstrate that guidance was applied, not merely
+list documentation that was visited.
 
 ### Custom-component test framework requirements
 
