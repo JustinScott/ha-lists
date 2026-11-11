@@ -10,6 +10,7 @@ import { startNative } from "./native-runtime.mjs";
 import { verifyTaskFilters } from "./filter-checks.mjs";
 import { verifyTaskSearch } from "./search-checks.mjs";
 import { verifyPanelNavigation } from "./navigation-checks.mjs";
+import { verifyTaskSorting } from "./sort-checks.mjs";
 
 const docker = promisify(execFile);
 const image = "ghcr.io/home-assistant/home-assistant:2026.11.1";
@@ -262,6 +263,7 @@ test("native To-do and HA Lists share task changes across browser sessions", { t
     await verifyTaskFilters({ browser, page: lists, base, token, username, password,
       post, openPanel, entityId });
     await verifyTaskSearch({ page: lists, base, token, post, entityId, listName, secondName });
+    await verifyTaskSorting({ page: lists, base, token, post, entityId, listName, secondName });
 
     const native = await openPanel(browser, base, `/todo?entity_id=${entityId}`, username, password);
     const item = "Shared browser task";

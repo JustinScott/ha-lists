@@ -1,6 +1,6 @@
 # HA Lists — handoff for a new local Codex session
 
-## Local development update (2026-11-11; locally verified, CI pending)
+## Local development update (2026-11-11)
 
 - Local Windows/WSL setup is installed and verified. Use `dev/local.ps1 check`
   for ordinary checks and `dev/local.ps1 browser` for those checks plus the
@@ -9,21 +9,31 @@
   substring matching, case-insensitive with surrounding whitespace ignored,
   intersected with the selected filter. Query survives list switches, resets on
   reload, and preserves entry/editor drafts. README/specs describe the behavior.
+- The shell includes a themed header with HA's native sidebar control and follows
+  HA's `narrow` state. Browser tests open/close the real drawer by touch/keyboard,
+  navigate to native To-do and back, and check drafts during drawer/viewport
+  changes. Wait for the native modal to finish closing before entering text.
+- Active-task sorting supports Newest first (default/reversed source order) and
+  Oldest first (source order). Completed tasks keep source order. This is a local
+  display preference, retained across lists/updates and reset on reload; it does
+  not change native task order. Native tasks have no general creation timestamp.
 - The panel now uses native authenticated `todo/item/subscribe` snapshots so
   description-only changes update results. Subscriptions clean up on list or
   connection changes/disconnect, ignore stale results, and retain read/state
   fallback when rejected. Native tasks remain authoritative.
 - `dev/local.ps1 browser` passed: Ruff/format/syntax, 18 Python tests (98.28%
-  coverage), 44 panel tests, and the complete installed-HA browser workflow.
-  Five new panel tests cover search and subscription lifecycle/races; browser
-  coverage verifies native description changes, filters, list switching, focus,
-  drafts, and mobile overflow. Existing HA tests run unchanged because backend
+  coverage), 48 panel tests, and the complete installed-HA browser workflow.
+  Panel tests cover search, sorting, drafts, failures and subscription lifecycle/
+  races; browser coverage verifies native order/data, description changes, filters,
+  sorting, reload, list switching, focus, drafts, shell navigation and mobile
+  overflow. Existing HA tests run unchanged because backend
   contracts/storage did not change; the browser tests exercise the native API.
 - Guidance consulted: current official custom-panel docs, Core AGENTS/integration
   skill, native frontend To-do subscription implementation, entity docs, HACS
   requirements, and the official pytest framework guidance. No dependency,
-  backend, permission, or minimum-version declaration changed. Hosted validation
-  and real Android keyboard/IME verification remain outstanding.
+  backend, permission, or minimum-version declaration changed. Consult the latest
+  GitHub Validate run for the checked-out commit; local success does not certify
+  CI. Real Android keyboard/IME verification remains outstanding.
 
 The snapshot below describes the previously committed baseline.
 

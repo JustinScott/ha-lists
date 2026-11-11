@@ -192,7 +192,7 @@ other todo entities
 
 - Each task row has an accessible, touch-friendly checkbox to complete or reopen it.
 - Display active tasks in reverse provider order so newly added Local To-do tasks appear at the top. Completed tasks stay below active tasks, keep their provider order, and display with struck-through titles. Sorting changes the HA Lists display only.
-- Future enhancement: allow users to choose a task sort order, including newest-first and oldest-first.
+- Users can choose newest-first or oldest-first for active tasks as specified below.
 - Use native `todo.update_item` with the provider's stable item UID where available, falling back to summary only when needed. Respect provider capability and error responses.
 - Prevent duplicate updates while an item change is pending, and restore the prior displayed status if the update fails.
 - Verify both directions against a Local To-do entity and in the Android companion app; add regression tests for status updates, failures, sorting, and repeated taps.
@@ -278,6 +278,28 @@ other todo entities
 - Cover matching, safe literal text, filter composition, counts, clear/focus,
   drafts, refreshes and list switching in panel tests. Verify real native task
   updates and search interaction in the disposable-HA browser workflow.
+
+### Task sorting — active items
+
+- Provide a labelled **Sort active tasks** selector with **Newest first**
+  (default) and **Oldest first**. Native To-do items do not expose a general
+  creation timestamp: newest-first reverses active provider order, oldest-first
+  preserves it. Local To-do appends new items; other providers may order items
+  differently. Explain the source-list-order basis beside the control.
+- Completed tasks remain below active tasks in provider order for either choice,
+  including in the Completed filter. Sorting composes with all filters and search
+  and is display-only: preserve provider order, stable UIDs and task fields; do
+  not call native move/update actions or fetch items merely to change the sort.
+- Retain the choice across list switches, refreshes and native task snapshots in
+  the open panel. A new panel/page reload defaults to Newest first. Preserve
+  quick-entry/search/editor drafts, the focused control and existing menu/layout
+  behavior while switching sort. Re-evaluate display order after additions,
+  completion/reopening, failures and native updates.
+- Panel tests cover both choices, duplicate titles, stable UIDs, untouched provider data,
+  search/filter combinations, drafts/focus, list switching and update recovery.
+  The installed-HA browser workflow verifies keyboard selection, native/provider
+  order, synchronization and mobile layout with synthetic tasks. No backend or
+  persistence contract is changed by this preference.
 
 ### Backlog — per-user list write permissions
 

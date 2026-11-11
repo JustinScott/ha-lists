@@ -24,6 +24,7 @@ class HaListsPanel extends HTMLElement {
     this._updatingItems = new Set();
     this._edit = null;
     this._filter = "all";
+    this._sort = "newest";
     this._search = "";
     this._itemSubscription = null;
     this._filterTimer = null;
@@ -468,9 +469,9 @@ class HaListsPanel extends HTMLElement {
         .search label { display:grid; gap:4px; flex:1; min-width:0; }
         .search input { box-sizing:border-box; width:100%; min-width:0; min-height:44px; padding:8px; font:inherit; color:var(--primary-text-color); background:var(--card-background-color); border:1px solid var(--divider-color); border-radius:6px; }
         .search button { min-height:44px; padding:8px; font:inherit; color:inherit; background:var(--secondary-background-color); border:1px solid var(--divider-color); border-radius:6px; }
-        .filters { display:flex; align-items:center; flex-wrap:wrap; gap:8px 16px; margin:12px 0; }
-        .filters label { display:flex; align-items:center; gap:8px; }
-        .filters select { max-width:100%; min-height:44px; padding:8px; font:inherit; color:var(--primary-text-color); background:var(--card-background-color); border:1px solid var(--divider-color); border-radius:6px; }
+        .filters { display:flex; align-items:center; flex-wrap:wrap; gap:var(--ha-space-2,8px) var(--ha-space-4,16px); margin:var(--ha-space-3,12px) 0; }
+        .filters label { display:flex; align-items:center; gap:var(--ha-space-2,8px); }
+        .filters select { max-width:100%; min-height:44px; padding:var(--ha-space-2,8px); font:inherit; color:var(--primary-text-color); background:var(--card-background-color); border:1px solid var(--divider-color); border-radius:var(--ha-border-radius-md,6px); }
         .filter-help { margin:4px 0; overflow-wrap:anywhere; }
         .muted { color:var(--secondary-text-color); }
         .error { color:var(--error-color); }
@@ -546,10 +547,29 @@ class HaListsPanel extends HTMLElement {
         this.render();
       });
       filterLabel.append(this._filterSelect);
+      const sortLabel = document.createElement("label");
+      sortLabel.append("Sort active tasks");
+      this._sortSelect = document.createElement("select");
+      this._sortSelect.setAttribute("aria-describedby", "task-sort-help");
+      for (const [value, title] of [["newest", "Newest first"], ["oldest", "Oldest first"]]) {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = title;
+        this._sortSelect.append(option);
+      }
+      this._sortSelect.addEventListener("change", () => {
+        this._sort = this._sortSelect.value;
+        this.render();
+      });
+      sortLabel.append(this._sortSelect);
       this._filterCount = document.createElement("span");
       this._filterCount.setAttribute("role", "status");
       this._filterCount.setAttribute("aria-live", "polite");
-      this._filters.append(filterLabel, this._filterCount);
+      this._filters.append(filterLabel, sortLabel, this._filterCount);
+      this._sortHelp = document.createElement("p");
+      this._sortHelp.id = "task-sort-help";
+      this._sortHelp.className = "filter-help muted";
+      this._sortHelp.textContent = "Newest/oldest use source-list order. Completed tasks keep their source order.";
       this._filterHelp = document.createElement("p");
       this._filterHelp.className = "filter-help muted";
       this._form = document.createElement("form");
@@ -670,7 +690,7 @@ class HaListsPanel extends HTMLElement {
       this._editError = document.createElement("p");
       this._editError.className = "error";
       this._editError.setAttribute("role", "alert");
-      article.append(this._heading, this._searchControls, this._filters, this._filterHelp, this._form, this._editForm, this._editError, this._results);
+      article.append(this._heading, this._searchControls, this._filters, this._sortHelp, this._filterHelp, this._form, this._editForm, this._editError, this._results);
       layout.append(this._nav, article);
       this._main.append(layout);
       this.shadowRoot.replaceChildren(style, header, this._main);
@@ -716,6 +736,8 @@ class HaListsPanel extends HTMLElement {
     const visibleItems = this.filteredItems();
     this._filters.hidden = !selected;
     this._filterSelect.value = this._filter;
+    this._sortSelect.value = this._sort;
+    this._sortHelp.hidden = !selected;
     this._filterCount.textContent = this._loading ? "Loading tasks…" : `${visibleItems.length} of ${this._items.length} tasks`;
     this._filterHelp.hidden = !selected || !["today", "overdue"].includes(this._filter);
     this._filterHelp.textContent = (this._filter === "today"
@@ -744,13 +766,13 @@ class HaListsPanel extends HTMLElement {
         results.push(p);
       } else {
         const list = document.createElement("ul");
-        // Local To-do appends new items. Reverse the active items for display.
+        // Native tasks have no creation timestamp; Local To-do appends new items.
         const active = [];
         const completed = [];
         for (const item of visibleItems) {
           (item.status === "completed" ? completed : active).push(item);
         }
-        const sorted = [...active.reverse(), ...completed];
+        const sorted = [...(this._sort === "oldest" ? active : active.reverse()), ...completed];
         for (const item of sorted) {
           const li = document.createElement("li");
           const checkbox = document.createElement("input");

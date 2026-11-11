@@ -84,6 +84,110 @@ function change(window, checkbox, checked) {
   checkbox.checked = checked;
   checkbox.dispatchEvent(new window.Event("change", { bubbles: true }));
 }
+function selectSort(window, panel, value) {
+  panel._sortSelect.value = value;
+  panel._sortSelect.dispatchEvent(new window.Event("change", { bubbles: true }));
+}
+
+test("sorting retains provider data, duplicate task identities, completed order and control focus", async () => {
+  const { panel, window, items, calls, requests } = await setup({ items: [
+    { uid: "a", summary: "Same title", status: "needs_action" },
+    { uid: "b", summary: "Completed first", status: "completed" },
+    { uid: "c", summary: "Same title", status: "needs_action" },
+    { uid: "d", summary: "Completed second", status: "completed" },
+    { uid: "e", summary: "Newest", status: "needs_action" },
+  ] });
+  const ids = () => rows(panel).map((row) => row.querySelector(".task-title").dataset.uid);
+  const provider = JSON.stringify(items);
+  const loaded = JSON.stringify(panel._items);
+  const reads = requests.length;
+  assert.equal(panel._sortSelect.value, "newest");
+  assert.deepEqual(ids(), ["e", "c", "a", "b", "d"]);
+  const select = panel._sortSelect;
+  select.focus();
+  selectSort(window, panel, "oldest");
+  assert.deepEqual(ids(), ["a", "c", "e", "b", "d"]);
+  assert.equal(panel._sortSelect, select);
+  assert.equal(panel.shadowRoot.activeElement, select);
+  selectSort(window, panel, "newest");
+  assert.deepEqual(ids(), ["e", "c", "a", "b", "d"]);
+  assert.equal(JSON.stringify(items), provider);
+  assert.equal(JSON.stringify(panel._items), loaded);
+  assert.equal(requests.length, reads);
+  assert.equal(calls.length, 0);
+  panel.remove(); window.close();
+});
+
+test("sort composes with search/filters and keeps drafts and selection across snapshots and lists", async () => {
+  let push;
+  const { panel, window, calls } = await setup({ lists: ["todo.groceries", "todo.hardware"],
+    items: [
+      { uid: "a", summary: "Apple old", status: "needs_action" },
+      { uid: "b", summary: "Other", status: "needs_action" },
+      { uid: "c", summary: "Apple new", status: "needs_action" },
+      { uid: "d", summary: "Apple done", status: "completed" },
+    ], subscribeItems(callback) { push = callback; return () => {}; } });
+  const title = openRename(panel, "Apple old");
+  title.value = "Unsaved editor";
+  panel._input.value = "Unsent task";
+  panel._input.dispatchEvent(new window.Event("input"));
+  const input = search(window, panel, "Apple");
+  selectFilter(window, panel, "active");
+  selectSort(window, panel, "oldest");
+  assert.deepEqual(visibleTitles(panel), ["Apple old", "Apple new"]);
+  assert.equal(title.value, "Unsaved editor");
+  assert.equal(title.form.hidden, false);
+  assert.equal(panel._input.value, "Unsent task");
+  assert.equal(panel._searchInput, input);
+  assert.equal(input.value, "Apple");
+  selectFilter(window, panel, "completed");
+  assert.deepEqual(visibleTitles(panel), ["Apple done"]);
+  selectFilter(window, panel, "active");
+  push({ items: [
+    { uid: "a", summary: "Apple old", status: "needs_action" },
+    { uid: "c", summary: "Apple new", status: "needs_action" },
+    { uid: "e", summary: "Apple latest", status: "needs_action" },
+  ] });
+  assert.deepEqual(visibleTitles(panel), ["Apple old", "Apple new", "Apple latest"]);
+  panel.shadowRoot.querySelectorAll("nav button")[1].click();
+  await tick(); await tick();
+  assert.equal(panel._sortSelect.value, "oldest");
+  assert.equal(panel._searchInput.value, "Apple");
+  assert.equal(panel._input.value, "Unsent task");
+  assert.deepEqual(visibleTitles(panel), ["Apple old", "Apple new"]);
+  assert.equal(calls.length, 0);
+  panel.remove(); window.close();
+});
+
+test("oldest-first sorting recovers from failed completion and reorders successful completion/reopening", async () => {
+  let fail = true;
+  const items = [
+    { uid: "a", summary: "Oldest", status: "needs_action" },
+    { uid: "b", summary: "Newest", status: "needs_action" },
+  ];
+  const { panel, window, calls } = await setup({ items,
+    service: async (_domain, _action, data) => {
+      if (fail) throw new Error("Synthetic provider unavailable");
+      items.find((item) => item.uid === data.item).status = data.status;
+    } });
+  selectSort(window, panel, "oldest");
+  change(window, rows(panel)[0].querySelector("input"), true);
+  assert.deepEqual(visibleTitles(panel), ["Newest", "Oldest"]);
+  await tick(); await tick();
+  assert.deepEqual(visibleTitles(panel), ["Oldest", "Newest"]);
+  assert.match(panel._results.textContent, /Synthetic provider unavailable/);
+  fail = false;
+  change(window, rows(panel)[0].querySelector("input"), true);
+  await tick(); await tick();
+  assert.deepEqual(visibleTitles(panel), ["Newest", "Oldest"]);
+  change(window, rows(panel)[1].querySelector("input"), false);
+  await tick(); await tick();
+  assert.deepEqual(visibleTitles(panel), ["Oldest", "Newest"]);
+  assert.equal(panel._sortSelect.value, "oldest");
+  assert.deepEqual(calls.map((call) => call.data.item), ["a", "a", "a"]);
+  assert.deepEqual(items.map((item) => item.uid), ["a", "b"]);
+  panel.remove(); window.close();
+});
 
 test("HA narrow updates preserve the native header, inputs, drafts and provider requests", async () => {
   const { panel, window, requests } = await setup({ items: [{ uid: "a", summary: "Apples" }] });

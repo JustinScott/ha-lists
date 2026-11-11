@@ -73,7 +73,7 @@ Remove the HA Lists integration entry from Settings → Devices & services, then
 
 ## Supported features and current limitations
 
-- **Available:** One local HA Lists config entry; select multiple existing native `todo` entities; named-list sidebar; task retrieval, creation, renaming, completion, reopening, and deletion; task title/description search; All/Active/Completed/Due today/Overdue filters; loading and error messages.
+- **Available:** One local HA Lists config entry; select multiple existing native `todo` entities; named-list sidebar; task retrieval, creation, renaming, completion, reopening, and deletion; task title/description search; All/Active/Completed/Due today/Overdue filters; newest/oldest active-task sorting; loading and error messages.
 - **Not yet available:** Creating provider lists; rich metadata; autocomplete/history; Assist-specific routing; provider migration.
 
 The underlying `todo` integrations remain the source of truth for tasks. Removing HA Lists does not intentionally remove provider tasks. Provider capabilities vary; not every provider exposes completed items or rich task fields.
@@ -111,7 +111,7 @@ Mobile browser emulation checks touch interactions, focus, and horizontal
 layout. It does not verify a real Android companion app's keyboard or IME;
 that remains a manual acceptance check before a release.
 
-## Task search and filters
+## Task search, filters and sorting
 
 Use **Search tasks** to find a literal substring in task titles or descriptions
 in the selected list. Matching ignores case and surrounding spaces, and combines
@@ -124,6 +124,14 @@ Use **Show tasks** to choose **All**, **Active**, **Completed**, **Due today**,
 or **Overdue**. The count shows matching tasks out of the selected list's total.
 Filters keep the current sort order and do not change or delete provider tasks.
 The selection stays when switching lists in the panel; reloading defaults to All.
+
+Use **Sort active tasks** to choose **Newest first** (default) or **Oldest first**.
+These use the source list's order: Newest first reverses active items and Oldest
+first keeps their original order. Local To-do appends new items, while other
+providers may order them differently. Completed tasks stay below active tasks
+and keep their source order. Sorting works with search and filters, stays when
+switching lists in the open panel, and resets on reload. It changes only the
+display, preserving provider tasks and unsaved drafts.
 
 Due today and Overdue show unfinished tasks in **your browser's time zone**,
 which appears beside the selector. A date-only task becomes overdue after local
