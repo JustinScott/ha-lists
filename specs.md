@@ -212,6 +212,11 @@ other todo entities
 - Regression-test keyboard focus, consecutive additions, and submission in the Android companion app where feasible. The browser-only pass does not establish Android-app compatibility.
 - Track implementation in [GitHub issue #1](https://github.com/JustinScott/ha-lists/issues/1). This is a **Milestone 2 core task-entry requirement**, to complete before expanding to task completion/editing. The issue is not itself evidence that the behavior is implemented.
 
+### Backlog — per-user list write permissions
+
+- Define list ownership and enforce owner-or-administrator task writes on the server. Native Home Assistant To-do lists currently follow Home Assistant entity permissions, including access granted to ordinary local users.
+- Add a real Home Assistant regression test with a list owner, an administrator, and another ordinary local user. Verify that the owner and administrator can add, rename, complete, reopen, and delete tasks. Verify that the other user is denied and the list stays unchanged, including when that user calls the native To-do actions directly.
+
 ## 12. Approved architecture decisions and open implementation details
 
 **Approved:** Extended task data and suggestion history reside in Home Assistant-managed local storage. Initial provider portability is Option A (rebind without task migration). Option B remains a documented future goal, not an initial-release requirement. Package as one HACS-compatible custom integration with a bundled dedicated frontend panel; no standalone server or add-on is required.
