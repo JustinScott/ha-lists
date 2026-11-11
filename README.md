@@ -73,8 +73,8 @@ Remove the HA Lists integration entry from Settings → Devices & services, then
 
 ## Supported features and current limitations
 
-- **Available:** One local HA Lists config entry; select multiple existing native `todo` entities; named-list sidebar; task retrieval, creation, renaming, completion, reopening, and deletion; All/Active/Completed/Due today/Overdue filters; loading and error messages.
-- **Not yet available:** Creating provider lists; search; rich metadata; autocomplete/history; Assist-specific routing; provider migration.
+- **Available:** One local HA Lists config entry; select multiple existing native `todo` entities; named-list sidebar; task retrieval, creation, renaming, completion, reopening, and deletion; task title/description search; All/Active/Completed/Due today/Overdue filters; loading and error messages.
+- **Not yet available:** Creating provider lists; rich metadata; autocomplete/history; Assist-specific routing; provider migration.
 
 The underlying `todo` integrations remain the source of truth for tasks. Removing HA Lists does not intentionally remove provider tasks. Provider capabilities vary; not every provider exposes completed items or rich task fields.
 
@@ -111,7 +111,14 @@ Mobile browser emulation checks touch interactions, focus, and horizontal
 layout. It does not verify a real Android companion app's keyboard or IME;
 that remains a manual acceptance check before a release.
 
-## Task filters
+## Task search and filters
+
+Use **Search tasks** to find a literal substring in task titles or descriptions
+in the selected list. Matching ignores case and surrounding spaces, and combines
+with **Show tasks**. **Clear search** keeps the current filter. The query stays
+when switching lists and resets on reload. Search runs locally on loaded tasks;
+it does not fetch extra provider history or change tasks. Counts include both
+search and filter restrictions.
 
 Use **Show tasks** to choose **All**, **Active**, **Completed**, **Due today**,
 or **Overdue**. The count shows matching tasks out of the selected list's total.

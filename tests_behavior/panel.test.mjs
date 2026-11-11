@@ -11,7 +11,7 @@ const deferred = () => {
   return { promise, resolve, reject };
 };
 
-async function setup({ lists = ["todo.groceries"], items = [], service, readItems, supportedFeatures = 6, clock } = {}) {
+async function setup({ lists = ["todo.groceries"], items = [], service, readItems, subscribeItems, supportedFeatures = 6, clock } = {}) {
   const dom = new JSDOM("<!doctype html><html><body></body></html>", {
     runScripts: "outside-only", pretendToBeVisual: true,
   });
@@ -36,6 +36,9 @@ async function setup({ lists = ["todo.groceries"], items = [], service, readItem
   const hass = {
     states,
     connection: {
+      async subscribeMessage(callback, request) {
+        return subscribeItems ? subscribeItems(callback, request) : () => {};
+      },
       async sendMessagePromise(request) {
         requests.push(request);
         if (request.type === "ha_lists/lists") return { lists };
@@ -71,10 +74,140 @@ async function setup({ lists = ["todo.groceries"], items = [], service, readItem
 }
 
 function rows(panel) { return [...panel.shadowRoot.querySelectorAll("li")]; }
+function search(window, panel, value) {
+  const input = panel.shadowRoot.querySelector('input[type="search"]');
+  input.value = value;
+  input.dispatchEvent(new window.Event("input", { bubbles: true }));
+  return input;
+}
 function change(window, checkbox, checked) {
   checkbox.checked = checked;
   checkbox.dispatchEvent(new window.Event("change", { bubbles: true }));
 }
+
+test("search matches literal titles and descriptions, composes with filters and clears", async () => {
+  const { panel, window, calls, requests } = await setup({ items: [
+    { uid: "a", summary: "Apple juice", status: "needs_action" },
+    { uid: "b", summary: "Bread", description: "APPLE filling", status: "completed" },
+    { uid: "c", summary: "<img src=x>", description: null, status: "needs_action" },
+  ] });
+  const reads = requests.length;
+  search(window, panel, "  ApPlE  ");
+  assert.deepEqual(visibleTitles(panel), ["Apple juice", "Bread"]);
+  assert.equal(panel._filterCount.textContent, "2 of 3 tasks");
+  selectFilter(window, panel, "completed");
+  assert.deepEqual(visibleTitles(panel), ["Bread"]);
+  search(window, panel, ".*");
+  assert.match(panel._results.textContent, /No tasks match your search and filter/);
+  panel._clearSearch.click();
+  assert.deepEqual(visibleTitles(panel), ["Bread"]);
+  assert.equal(panel._filter, "completed");
+  assert.equal(panel.shadowRoot.activeElement, panel._searchInput);
+  selectFilter(window, panel, "all");
+  search(window, panel, "<img");
+  assert.deepEqual(visibleTitles(panel), ["<img src=x>"]);
+  assert.equal(panel.shadowRoot.querySelector("img"), null);
+  search(window, panel, "   ");
+  assert.equal(rows(panel).length, 3);
+  assert.equal(requests.length, reads);
+  assert.equal(calls.length, 0);
+  panel.remove(); window.close();
+});
+
+test("search keeps its input, focus, quick-entry and editor drafts across refreshes", async () => {
+  const { panel, window, hass, items } = await setup({ items: [
+    { uid: "a", summary: "Apples", status: "needs_action" },
+  ] });
+  const title = openRename(panel, "Apples");
+  title.value = "Unsaved title";
+  panel._input.value = "Unsent task";
+  panel._input.dispatchEvent(new window.Event("input"));
+  const input = search(window, panel, "missing");
+  input.focus();
+  input.setSelectionRange(2, 4);
+  items[0].description = "Now matches missing";
+  panel.hass = { ...hass, states: { ...hass.states,
+    "todo.groceries": { ...hass.states["todo.groceries"], state: "1" } } };
+  await tick(); await tick();
+  assert.deepEqual(visibleTitles(panel), ["Apples"]);
+  assert.equal(panel._searchInput, input);
+  assert.equal(panel.shadowRoot.activeElement, input);
+  assert.equal(input.value, "missing");
+  assert.equal(input.selectionStart, 2);
+  assert.equal(input.selectionEnd, 4);
+  assert.equal(title.form.hidden, false);
+  assert.equal(title.value, "Unsaved title");
+  assert.equal(panel._input.value, "Unsent task");
+  panel.remove(); window.close();
+});
+
+test("search persists across list switches, resets in a new panel and distinguishes empty lists", async () => {
+  const { panel, window } = await setup({ lists: ["todo.groceries", "todo.hardware"],
+    readItems: (id) => id === "todo.groceries" ? [{ uid: "a", summary: "Apples" }] : [] });
+  search(window, panel, "apple");
+  panel.shadowRoot.querySelectorAll("nav button")[1].click();
+  await tick(); await tick();
+  assert.equal(panel._searchInput.value, "apple");
+  assert.match(panel._results.textContent, /No tasks found/);
+  panel.shadowRoot.querySelector("nav button").click();
+  await tick(); await tick();
+  assert.deepEqual(visibleTitles(panel), ["Apples"]);
+  const fresh = window.document.createElement("ha-lists-panel");
+  assert.equal(fresh._search, "");
+  panel.remove(); window.close();
+});
+
+test("native item snapshots refresh search and ignore stale lists and reads, with cleanup", async () => {
+  const subscriptions = [];
+  const state = await setup({ lists: ["todo.groceries", "todo.hardware"],
+    items: [{ uid: "a", summary: "Apples" }],
+    subscribeItems(callback, request) {
+      const subscription = { callback, request, stopped: false };
+      subscriptions.push(subscription);
+      return () => { subscription.stopped = true; };
+    } });
+  const { panel, window } = state;
+  search(window, panel, "violet");
+  const pending = deferred();
+  panel._connection.sendMessagePromise = () => pending.promise;
+  panel.loadItems();
+  subscriptions[0].callback({ items: [{ uid: "a", summary: "Apples", description: "violet" }] });
+  assert.deepEqual(visibleTitles(panel), ["Apples"]);
+  pending.resolve({ items: [] });
+  await tick();
+  assert.deepEqual(visibleTitles(panel), ["Apples"]);
+  panel.shadowRoot.querySelectorAll("nav button")[1].click();
+  await tick(); await tick();
+  assert.equal(subscriptions[0].stopped, true);
+  subscriptions[0].callback({ items: [{ uid: "stale", summary: "violet stale" }] });
+  assert.deepEqual(visibleTitles(panel), []);
+  subscriptions[1].callback({ items: [{ uid: "b", summary: "Hardware", description: "violet" }] });
+  assert.deepEqual(visibleTitles(panel), ["Hardware"]);
+  panel.remove();
+  assert.equal(subscriptions[1].stopped, true);
+  subscriptions[1].callback({ items: [] });
+  assert.deepEqual(visibleTitles(panel), ["Hardware"]);
+  window.document.body.append(panel);
+  await tick(); await tick();
+  assert.equal(subscriptions.length, 3);
+  panel.remove(); window.close();
+});
+
+test("delayed subscriptions are cleaned up and rejected subscriptions retain ordinary reads", async () => {
+  const pending = deferred();
+  let stopped = false;
+  const { panel, window } = await setup({ subscribeItems: () => pending.promise });
+  panel.remove();
+  pending.resolve(() => { stopped = true; });
+  await tick();
+  assert.equal(stopped, true);
+  window.close();
+  const rejected = await setup({ items: [{ uid: "a", summary: "Fallback" }],
+    subscribeItems: async () => { throw new Error("unsupported"); } });
+  assert.deepEqual(visibleTitles(rejected.panel), ["Fallback"]);
+  assert.equal(rejected.panel._itemSubscription, null);
+  rejected.panel.remove(); rejected.window.close();
+});
 
 test("loads configured lists, native todo items and accessible named navigation", async () => {
   const { panel, requests } = await setup({ items: [{ uid: "1", summary: "Apples", status: "needs_action" }] });

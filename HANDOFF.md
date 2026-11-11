@@ -1,5 +1,32 @@
 # HA Lists — handoff for a new local Codex session
 
+## Local development update (2026-11-11; locally verified, CI pending)
+
+- Local Windows/WSL setup is installed and verified. Use `dev/local.ps1 check`
+  for ordinary checks and `dev/local.ps1 browser` for those checks plus the
+  disposable-HA Playwright workflow. See `dev/README.md` for setup/start/stop.
+- Task search is implemented: title/description literal
+  substring matching, case-insensitive with surrounding whitespace ignored,
+  intersected with the selected filter. Query survives list switches, resets on
+  reload, and preserves entry/editor drafts. README/specs describe the behavior.
+- The panel now uses native authenticated `todo/item/subscribe` snapshots so
+  description-only changes update results. Subscriptions clean up on list or
+  connection changes/disconnect, ignore stale results, and retain read/state
+  fallback when rejected. Native tasks remain authoritative.
+- `dev/local.ps1 browser` passed: Ruff/format/syntax, 18 Python tests (98.28%
+  coverage), 44 panel tests, and the complete installed-HA browser workflow.
+  Five new panel tests cover search and subscription lifecycle/races; browser
+  coverage verifies native description changes, filters, list switching, focus,
+  drafts, and mobile overflow. Existing HA tests run unchanged because backend
+  contracts/storage did not change; the browser tests exercise the native API.
+- Guidance consulted: current official custom-panel docs, Core AGENTS/integration
+  skill, native frontend To-do subscription implementation, entity docs, HACS
+  requirements, and the official pytest framework guidance. No dependency,
+  backend, permission, or minimum-version declaration changed. Hosted validation
+  and real Android keyboard/IME verification remain outstanding.
+
+The snapshot below describes the previously committed baseline.
+
 This document lets a new session continue without access to the previous chat
 or its cloud filesystem. It describes the state verified at commit `1068696`
 (`106869676fdc5ff861c4803199524fa120104785`). Check newer commits and CI before

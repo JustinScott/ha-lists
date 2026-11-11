@@ -249,6 +249,28 @@ other todo entities
   cover all five filters, keyboard selection, completion/reopening, and two
   simultaneous users' time-zone views with synthetic tasks.
 
+### Task search
+
+- Search the selected list's task titles and provider descriptions with a literal,
+  case-insensitive substring. Ignore surrounding query whitespace; an empty query
+  shows all tasks allowed by the current filter. Search and filters intersect.
+- Search loaded tasks locally without additional provider requests, history,
+  logging, or persistence. Keep the query across list switches in the open panel;
+  a new panel/page reload starts empty. Provider-supported retrieval still bounds
+  the searchable tasks; this is not a search of unavailable provider history.
+- Provide a labelled search field, Clear search control, matching/total count and
+  distinct empty-list/no-match feedback. Clearing search keeps the current filter
+  and returns focus to the search field. Preserve existing ordering, task IDs,
+  the search input/caret, unsent task-entry drafts and open editor drafts during
+  search/refreshes. Native updates re-evaluate membership using the authenticated
+  `todo/item/subscribe` snapshots, including description-only changes that do not
+  change the entity's active count. Unsubscribe on list/connection changes and
+  disconnect; ignore stale callbacks and clean up delayed subscriptions. Retain
+  ordinary reads/state refreshes if the runtime rejects the subscription.
+- Cover matching, safe literal text, filter composition, counts, clear/focus,
+  drafts, refreshes and list switching in panel tests. Verify real native task
+  updates and search interaction in the disposable-HA browser workflow.
+
 ### Backlog — per-user list write permissions
 
 - Define list ownership and enforce owner-or-administrator task writes on the server. Native Home Assistant To-do lists currently follow Home Assistant entity permissions, including access granted to ordinary local users.
@@ -383,7 +405,7 @@ other todo entities
 
 - Home Assistant persists the configured list IDs in config-entry options. Native Local To-do persists tasks and their supported fields. The restart test reads both from the same configuration directory in a fresh Home Assistant instance.
 - HA Lists discovery applies the authenticated user's entity read policy. The panel sends task writes through native To-do actions, which enforce entity control permissions. Home Assistant owns the native To-do WebSocket endpoints.
-- Reload restores the panel and reuses the registered HTTP asset and WebSocket command. The open panel refreshes tasks when Home Assistant publishes a changed state for the selected entity, while preserving the draft input. Changes that do not produce an entity state update may require a fresh task request.
+- Reload restores the panel and reuses the registered HTTP asset and WebSocket command. The open panel subscribes to native To-do item snapshots and also refreshes on changed entity states, preserving drafts. On runtimes that reject item subscriptions, changes that do not produce an entity state update may require a fresh task request.
 
 ### Behavior-first testing workflow
 

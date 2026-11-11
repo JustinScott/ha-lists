@@ -23,6 +23,8 @@ class HaListsPanel extends HTMLElement {
     this._updatingItems = new Set();
     this._edit = null;
     this._filter = "all";
+    this._search = "";
+    this._itemSubscription = null;
     this._filterTimer = null;
     this._onVisibility = () => {
       if (document.visibilityState === "visible") this.render();
@@ -33,6 +35,7 @@ class HaListsPanel extends HTMLElement {
     const previous = this._hass;
     this._hass = value;
     if (value?.connection && value.connection !== this._connection) {
+      this.stopItemSubscription();
       this._connection = value.connection;
       ++this._requestId;
       this._configured = null;
@@ -55,9 +58,12 @@ class HaListsPanel extends HTMLElement {
   connectedCallback() {
     document.addEventListener("visibilitychange", this._onVisibility);
     this.render();
+    if (this._selected) this.loadItems();
   }
 
   disconnectedCallback() {
+    ++this._requestId;
+    this.stopItemSubscription();
     document.removeEventListener("visibilitychange", this._onVisibility);
     clearTimeout(this._filterTimer);
     this._filterTimer = null;
@@ -68,9 +74,47 @@ class HaListsPanel extends HTMLElement {
       String(date.getDate()).padStart(2, "0")].join("-");
   }
 
+  stopItemSubscription() {
+    const subscription = this._itemSubscription;
+    this._itemSubscription = null;
+    if (subscription?.unsubscribe) {
+      Promise.resolve(subscription.unsubscribe()).catch(() => {});
+    }
+  }
+
+  async subscribeItems(entityId) {
+    const connection = this._connection;
+    if (this._itemSubscription?.entityId === entityId &&
+        this._itemSubscription.connection === connection) return;
+    this.stopItemSubscription();
+    if (!entityId || !connection || !this.isConnected) return;
+    const subscription = { entityId, connection, unsubscribe: null };
+    this._itemSubscription = subscription;
+    try {
+      const unsubscribe = await connection.subscribeMessage((response) => {
+        if (this._itemSubscription !== subscription || !this.isConnected) return;
+        // A pushed snapshot supersedes any older in-flight list request.
+        ++this._requestId;
+        this._items = response.items || [];
+        this._loading = false;
+        this._error = "";
+        this.render();
+      }, { type: "todo/item/subscribe", entity_id: entityId });
+      if (this._itemSubscription !== subscription) await unsubscribe();
+      else subscription.unsubscribe = unsubscribe;
+    } catch {
+      // Retain ordinary reads/state refreshes if the provider/runtime rejects
+      // subscriptions. No polling or wider permissions are introduced.
+      if (this._itemSubscription === subscription) this._itemSubscription = null;
+    }
+  }
+
   filteredItems(now = new Date()) {
     const today = this.localDay(now);
+    const query = this._search.trim().toLowerCase();
     return this._items.filter((item) => {
+      if (query && ![item.summary, item.description].some((value) =>
+        typeof value === "string" && value.toLowerCase().includes(query))) return false;
       const completed = item.status === "completed";
       if (this._filter === "all") return true;
       if (this._filter === "active") return !completed;
@@ -141,6 +185,7 @@ class HaListsPanel extends HTMLElement {
 
   async loadItems() {
     const entityId = this._selected;
+    this.subscribeItems(entityId);
     const requestId = ++this._requestId;
     this._items = [];
     this._error = "";
@@ -410,7 +455,11 @@ class HaListsPanel extends HTMLElement {
         nav,article { padding:18px; background:var(--card-background-color); border:1px solid var(--divider-color); border-radius:12px; }
         nav button { display:block; width:100%; border:0; border-radius:8px; background:transparent; color:inherit; text-align:left; font:inherit; padding:12px; cursor:pointer; overflow-wrap:anywhere; }
         nav button[aria-current=true] { background:var(--secondary-background-color); font-weight:600; }
-        button:focus-visible, select:focus-visible { outline:2px solid var(--primary-color); }
+        button:focus-visible, select:focus-visible, input:focus-visible { outline:2px solid var(--primary-color); }
+        .search { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin:12px 0; }
+        .search label { display:grid; gap:4px; flex:1; min-width:0; }
+        .search input { box-sizing:border-box; width:100%; min-width:0; min-height:44px; padding:8px; font:inherit; color:var(--primary-text-color); background:var(--card-background-color); border:1px solid var(--divider-color); border-radius:6px; }
+        .search button { min-height:44px; padding:8px; font:inherit; color:inherit; background:var(--secondary-background-color); border:1px solid var(--divider-color); border-radius:6px; }
         .filters { display:flex; align-items:center; flex-wrap:wrap; gap:8px 16px; margin:12px 0; }
         .filters label { display:flex; align-items:center; gap:8px; }
         .filters select { max-width:100%; min-height:44px; padding:8px; font:inherit; color:var(--primary-text-color); background:var(--card-background-color); border:1px solid var(--divider-color); border-radius:6px; }
@@ -444,6 +493,27 @@ class HaListsPanel extends HTMLElement {
       this._nav.setAttribute("aria-label", "Configured to-do lists");
       const article = document.createElement("article");
       this._heading = document.createElement("h2");
+      this._searchControls = document.createElement("div");
+      this._searchControls.className = "search";
+      const searchLabel = document.createElement("label");
+      this._searchInput = document.createElement("input");
+      this._searchInput.type = "search";
+      this._searchInput.maxLength = 255;
+      this._searchInput.placeholder = "Titles and descriptions";
+      this._searchInput.addEventListener("input", () => {
+        this._search = this._searchInput.value;
+        this.render();
+      });
+      searchLabel.append("Search tasks", this._searchInput);
+      this._clearSearch = document.createElement("button");
+      this._clearSearch.type = "button";
+      this._clearSearch.textContent = "Clear search";
+      this._clearSearch.addEventListener("click", () => {
+        this._search = this._searchInput.value = "";
+        this.render();
+        this._searchInput.focus();
+      });
+      this._searchControls.append(searchLabel, this._clearSearch);
       this._filters = document.createElement("div");
       this._filters.className = "filters";
       const filterLabel = document.createElement("label");
@@ -585,7 +655,7 @@ class HaListsPanel extends HTMLElement {
       this._editError = document.createElement("p");
       this._editError.className = "error";
       this._editError.setAttribute("role", "alert");
-      article.append(this._heading, this._filters, this._filterHelp, this._form, this._editForm, this._editError, this._results);
+      article.append(this._heading, this._searchControls, this._filters, this._filterHelp, this._form, this._editForm, this._editError, this._results);
       layout.append(this._nav, article);
       this._main.append(h1, layout);
       this.shadowRoot.replaceChildren(style, this._main);
@@ -615,6 +685,8 @@ class HaListsPanel extends HTMLElement {
     }
     this._nav.replaceChildren(...navChildren);
     this._heading.textContent = selected?.attributes?.friendly_name || "Select a list";
+    this._searchControls.hidden = !selected;
+    this._clearSearch.disabled = !this._search;
     this._form.hidden = !selected;
     // Do not disable the focused input during a write or refresh: on Android
     // that blurs the native field and closes the soft keyboard.
@@ -651,7 +723,9 @@ class HaListsPanel extends HTMLElement {
       if (!visibleItems.length) {
         const p = document.createElement("p");
         p.className = "muted";
-        p.textContent = this._items.length ? "No tasks match this filter." : "No tasks found.";
+        p.textContent = this._items.length
+          ? (this._search.trim() ? "No tasks match your search and filter." : "No tasks match this filter.")
+          : "No tasks found.";
         results.push(p);
       } else {
         const list = document.createElement("ul");
