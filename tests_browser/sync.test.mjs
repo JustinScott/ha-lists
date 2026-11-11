@@ -132,6 +132,8 @@ test("native To-do and HA Lists share task changes across browser sessions", { t
     await lists.keyboard.type("Second quick task");
     await lists.getByRole("button", { name: "Add", exact: true }).tap();
     await lists.getByRole("button", { name: "Rename Second quick task" }).waitFor();
+    assert.deepEqual(await lists.locator("ha-lists-panel li").allTextContents(),
+      ["Second quick task", "First quick task"]);
     assert.equal(await quickAdd.inputValue(), "");
     assert.ok(await quickAdd.evaluate((input) => input.matches(":focus")));
 

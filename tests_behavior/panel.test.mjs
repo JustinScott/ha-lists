@@ -90,6 +90,7 @@ test("Enter adds once, clears draft and retains input element for consecutive en
   input.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
   await tick(); await tick();
   assert.deepEqual(calls.map((call) => call.data.item), ["Milk", "Bread"]);
+  assert.deepEqual(rows(panel).map((row) => row.textContent), ["Bread", "Milk"]);
 });
 
 test("Add button submits through native service and clears input", async () => {
@@ -132,7 +133,7 @@ test("completion sends UID, sorts completed last and strikes title", async () =>
     { uid: "a", summary: "Apples", status: "needs_action" },
     { uid: "b", summary: "Bread", status: "needs_action" },
   ] });
-  change(window, rows(panel)[0].querySelector("input"), true);
+  change(window, panel.shadowRoot.querySelector('[aria-label="Complete Apples"]'), true);
   await tick(); await tick();
   assert.deepEqual(JSON.parse(JSON.stringify(calls[0])), { domain: "todo", action: "update_item", data: { entity_id: "todo.groceries", item: "a", status: "completed" } });
   assert.deepEqual(rows(panel).map((row) => row.textContent), ["Bread", "Apples"]);
@@ -275,7 +276,7 @@ test("rename uses the stable ID even when two tasks have the same title", async 
   saveTitle(window, input, "  Green apples  ");
   await tick();
   assert.deepEqual(JSON.parse(JSON.stringify(calls[0].data)), {
-    entity_id: "todo.groceries", item: "first", rename: "Green apples",
+    entity_id: "todo.groceries", item: "second", rename: "Green apples",
   });
   assert.deepEqual(rows(panel).map((row) => row.textContent), ["Green apples", "Apples"]);
   assert.equal(input.form.hidden, true);

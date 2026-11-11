@@ -405,9 +405,13 @@ class HaListsPanel extends HTMLElement {
         results.push(p);
       } else {
         const list = document.createElement("ul");
-        const sorted = [...this._items].sort((a, b) =>
-          Number(a.status === "completed") - Number(b.status === "completed")
-        );
+        // Local To-do appends new items. Reverse the active items for display.
+        const active = [];
+        const completed = [];
+        for (const item of this._items) {
+          (item.status === "completed" ? completed : active).push(item);
+        }
+        const sorted = [...active.reverse(), ...completed];
         for (const item of sorted) {
           const li = document.createElement("li");
           const checkbox = document.createElement("input");

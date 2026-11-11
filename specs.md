@@ -183,7 +183,8 @@ other todo entities
 ### Milestone 2 — task completion and reopening (implementation pending verification, 2026-11-09)
 
 - Each task row has an accessible, touch-friendly checkbox to complete or reopen it.
-- Completed tasks appear below active tasks, with their titles struck through; preserve original relative order within each group.
+- Display active tasks in reverse provider order so newly added Local To-do tasks appear at the top. Completed tasks stay below active tasks, keep their provider order, and display with struck-through titles. Sorting changes the HA Lists display only.
+- Future enhancement: allow users to choose a task sort order, including newest-first and oldest-first.
 - Use native `todo.update_item` with the provider's stable item UID where available, falling back to summary only when needed. Respect provider capability and error responses.
 - Prevent duplicate updates while an item change is pending, and restore the prior displayed status if the update fails.
 - Verify both directions against a Local To-do entity and in the Android companion app; add regression tests for status updates, failures, sorting, and repeated taps.
