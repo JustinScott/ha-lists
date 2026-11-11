@@ -73,8 +73,8 @@ Remove the HA Lists integration entry from Settings → Devices & services, then
 
 ## Supported features and current limitations
 
-- **Available:** One local HA Lists config entry; select multiple existing native `todo` entities; named-list sidebar; task retrieval, creation, renaming, completion, reopening, and deletion; loading and error messages.
-- **Not yet available:** Creating provider lists; due-date filters; rich metadata; autocomplete/history; Assist-specific routing; provider migration.
+- **Available:** One local HA Lists config entry; select multiple existing native `todo` entities; named-list sidebar; task retrieval, creation, renaming, completion, reopening, and deletion; All/Active/Completed/Due today/Overdue filters; loading and error messages.
+- **Not yet available:** Creating provider lists; search; rich metadata; autocomplete/history; Assist-specific routing; provider migration.
 
 The underlying `todo` integrations remain the source of truth for tasks. Removing HA Lists does not intentionally remove provider tasks. Provider capabilities vary; not every provider exposes completed items or rich task fields.
 
@@ -110,3 +110,18 @@ it never accepts an existing HA URL or uses your development account.
 Mobile browser emulation checks touch interactions, focus, and horizontal
 layout. It does not verify a real Android companion app's keyboard or IME;
 that remains a manual acceptance check before a release.
+
+## Task filters
+
+Use **Show tasks** to choose **All**, **Active**, **Completed**, **Due today**,
+or **Overdue**. The count shows matching tasks out of the selected list's total.
+Filters keep the current sort order and do not change or delete provider tasks.
+The selection stays when switching lists in the panel; reloading defaults to All.
+
+Due today and Overdue show unfinished tasks in **your browser's time zone**,
+which appears beside the selector. A date-only task becomes overdue after local
+midnight at the end of its due date. A timed task becomes overdue after its due
+instant; it can therefore appear in both Due today and Overdue. Tasks without a
+valid deadline are excluded from both date filters. Views update at deadline/day
+boundaries and when you return to the tab, with clock/time-zone rechecks within
+one minute. Completed tasks remain available under Completed and All.

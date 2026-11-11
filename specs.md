@@ -215,9 +215,39 @@ other todo entities
 ### Milestone 3 — native descriptions and due dates
 
 - Edit descriptions and date-only deadlines for tasks whose providers support those fields. Save only changed fields through the native To-do update action. Clearing an editable field sends a null value.
-- Allow timed deadlines when the provider supports them. Show the browser time zone beside the editor, convert the entered local date and time to an explicit UTC instant on save, and preserve the original value when the deadline is unchanged. Allow conversion to date-only when supported and clearing the entire deadline. Reject nonexistent daylight-saving times and retain the draft. Newly entered ambiguous fall-back times use the browser's earlier occurrence. Overdue and Due today filters are follow-ups.
+- Allow timed deadlines when the provider supports them. Show the browser time zone beside the editor, convert the entered local date and time to an explicit UTC instant on save, and preserve the original value when the deadline is unchanged. Allow conversion to date-only when supported and clearing the entire deadline. Reject nonexistent daylight-saving times and retain the draft. Newly entered ambiguous fall-back times use the browser's earlier occurrence. Overdue and Due today filters follow the task-filter rules below.
 - Preserve the draft on save failure. Check changed fields against the latest provider values before writing, so a detected concurrent change to the same field is not overwritten.
 - Verify capability handling, field clearing and conflict behavior in the panel suite, updated values after a Local To-do restart, and updates in the open native To-do browser session.
+
+### Task filters — All, Active, Completed, Due today, and Overdue
+
+- Provide an accessible "Show tasks" selector with All (default), Active,
+  Completed, Due today, and Overdue. Filtering changes display only: preserve
+  task identities, native provider order, existing active/completed sorting,
+  unsent quick-entry drafts, and the current task editor.
+- Active excludes completed tasks; Completed shows completed tasks only. Due
+  today and Overdue show unfinished tasks only. Undated tasks remain visible
+  in All/Active but do not match date filters. Invalid provider deadlines do
+  not match date filters.
+- Use the browser user's local time zone, shown beside the date filters,
+  independently of the HA server's time zone. A date-only deadline is a calendar
+  date and becomes overdue after that date's local midnight. A timed deadline
+  is an absolute instant: Overdue matches once that instant is past; Due today
+  matches its local calendar day, including earlier times today. The two date
+  filters can overlap. Account for daylight-saving and date-boundary changes.
+- Refresh date membership at local midnight and timed deadlines, recheck the
+  clock/time zone within one minute, and refresh on return to the tab. This is
+  client-side display work and does not poll the provider. Clean up timers and
+  visibility listeners when the panel disconnects.
+- Retain the selection across list switches in the open panel; a new panel or
+  page reload defaults to All. Show matching/total task counts and distinguish
+  an empty list from a list with no filter matches. Completing/reopening tasks
+  updates filter membership after provider success and recovers on failure.
+- Test behavior with fixed clocks across UTC, America/Chicago, and UTC+14,
+  including date-only versus timed deadlines, DST, empty results, draft and
+  sort preservation, cleanup and failed updates. Installed-HA browser tests
+  cover all five filters, keyboard selection, completion/reopening, and two
+  simultaneous users' time-zone views with synthetic tasks.
 
 ### Backlog — per-user list write permissions
 
@@ -407,3 +437,8 @@ Run the Python suite once in push CI and publish coverage as a diagnostic report
 - Local Windows development uses WSL2, with setup/check scripts and a guide in
   `dev/`. Scripts install the committed Python/Node locks and invoke the same
   checks as CI; generated environments, credentials and task data stay ignored.
+
+- Browser CI installs Chromium without the optional system-package installer:
+  the Ubuntu 24.04 runner already provides Chromium's shared libraries. The
+  earlier run failed downloading optional fonts from Ubuntu mirrors before
+  executing browser tests; tests and runtime dependency validation stay enabled.

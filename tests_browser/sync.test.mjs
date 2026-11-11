@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { chromium } from "playwright";
 import { startNative } from "./native-runtime.mjs";
+import { verifyTaskFilters } from "./filter-checks.mjs";
 
 const docker = promisify(execFile);
 const image = "ghcr.io/home-assistant/home-assistant:2026.11.1";
@@ -255,6 +256,9 @@ test("native To-do and HA Lists share task changes across browser sessions", { t
     assert.equal(await lists.getByRole("button", { name: "Rename Second list only", exact: true }).count(), 0);
     console.log("Verified mobile layout/focus, rapid entry, provider rejection/retry, and list switching");
 
+    await verifyTaskFilters({ browser, page: lists, base, token, username, password,
+      post, openPanel, entityId });
+
     const native = await openPanel(browser, base, `/todo?entity_id=${entityId}`, username, password);
     const item = "Shared browser task";
     const nativeCard = native.locator("hui-todo-list-card");
@@ -264,6 +268,7 @@ test("native To-do and HA Lists share task changes across browser sessions", { t
 
     await lists.getByRole("button", { name: `Rename ${item}` }).tap();
     const renamed = "Renamed browser task";
+    const nativeTask = nativeCard.locator("ha-check-list-item").filter({ hasText: renamed });
     await lists.getByRole("textbox", { name: "Task title" }).fill(renamed);
     await lists.getByLabel("Description", { exact: true }).fill("Pick up the green ones");
     await lists.getByLabel("Due date", { exact: true }).fill("2030-04-05");
@@ -271,7 +276,7 @@ test("native To-do and HA Lists share task changes across browser sessions", { t
     await nativeCard.getByText(renamed, { exact: true }).waitFor();
     assert.equal(await nativeCard.getByText(item, { exact: true }).count(), 0);
     await nativeCard.getByText("Pick up the green ones", { exact: true }).waitFor();
-    await nativeCard.locator(".due").waitFor();
+    await nativeTask.locator(".due").waitFor();
     await lists.getByRole("button", { name: `Rename ${renamed}` }).tap();
     const dueDate = lists.getByLabel("Due date", { exact: true });
     assert.equal(await dueDate.inputValue(), "2030-04-05");
@@ -298,7 +303,7 @@ test("native To-do and HA Lists share task changes across browser sessions", { t
     await lists.getByLabel("Description", { exact: true }).fill("");
     await lists.getByRole("button", { name: "Save", exact: true }).tap();
     await nativeCard.getByText("Pick up the green ones", { exact: true }).waitFor({ state: "detached" });
-    await nativeCard.locator(".due").waitFor({ state: "detached" });
+    await nativeTask.locator(".due").waitFor({ state: "detached" });
 
     const complete = lists.getByRole("checkbox", { name: `Complete ${renamed}` });
     await complete.click();

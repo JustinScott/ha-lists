@@ -22,6 +22,11 @@ class HaListsPanel extends HTMLElement {
     this._requestId = 0;
     this._updatingItems = new Set();
     this._edit = null;
+    this._filter = "all";
+    this._filterTimer = null;
+    this._onVisibility = () => {
+      if (document.visibilityState === "visible") this.render();
+    };
   }
 
   set hass(value) {
@@ -47,7 +52,60 @@ class HaListsPanel extends HTMLElement {
   }
 
   set panel(value) { this._panel = value; }
-  connectedCallback() { this.render(); }
+  connectedCallback() {
+    document.addEventListener("visibilitychange", this._onVisibility);
+    this.render();
+  }
+
+  disconnectedCallback() {
+    document.removeEventListener("visibilitychange", this._onVisibility);
+    clearTimeout(this._filterTimer);
+    this._filterTimer = null;
+  }
+
+  localDay(date) {
+    return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"),
+      String(date.getDate()).padStart(2, "0")].join("-");
+  }
+
+  filteredItems(now = new Date()) {
+    const today = this.localDay(now);
+    return this._items.filter((item) => {
+      const completed = item.status === "completed";
+      if (this._filter === "all") return true;
+      if (this._filter === "active") return !completed;
+      if (this._filter === "completed") return completed;
+      if (completed || typeof item.due !== "string") return false;
+      const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(item.due);
+      const due = new Date(dateOnly ? item.due + "T00:00:00Z" : item.due);
+      if (!Number.isFinite(due.getTime())) return false;
+      if (dateOnly && due.toISOString().slice(0, 10) !== item.due) return false;
+      const day = dateOnly ? item.due : this.localDay(due);
+      if (this._filter === "today") return day === today;
+      return dateOnly ? day < today : due.getTime() < now.getTime();
+    });
+  }
+
+  scheduleFilterRefresh() {
+    clearTimeout(this._filterTimer);
+    this._filterTimer = null;
+    if (!this.isConnected || !["today", "overdue"].includes(this._filter)) return;
+    const now = new Date();
+    const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    // Refresh at calendar/deadline boundaries, and recheck clock/time zone each minute.
+    let next = Math.min(midnight.getTime(), now.getTime() + 60000);
+    if (this._filter === "overdue") {
+      for (const item of this._items) {
+        if (item.status === "completed" || typeof item.due !== "string" || !item.due.includes("T")) continue;
+        const due = Date.parse(item.due);
+        if (due >= now.getTime()) next = Math.min(next, due + 1);
+      }
+    }
+    this._filterTimer = setTimeout(() => {
+      this._filterTimer = null;
+      this.render();
+    }, Math.max(1, next - now.getTime()));
+  }
 
   async loadConfiguration() {
     const connection = this._connection;
@@ -352,7 +410,11 @@ class HaListsPanel extends HTMLElement {
         nav,article { padding:18px; background:var(--card-background-color); border:1px solid var(--divider-color); border-radius:12px; }
         nav button { display:block; width:100%; border:0; border-radius:8px; background:transparent; color:inherit; text-align:left; font:inherit; padding:12px; cursor:pointer; overflow-wrap:anywhere; }
         nav button[aria-current=true] { background:var(--secondary-background-color); font-weight:600; }
-        button:focus-visible { outline:2px solid var(--primary-color); }
+        button:focus-visible, select:focus-visible { outline:2px solid var(--primary-color); }
+        .filters { display:flex; align-items:center; flex-wrap:wrap; gap:8px 16px; margin:12px 0; }
+        .filters label { display:flex; align-items:center; gap:8px; }
+        .filters select { max-width:100%; min-height:44px; padding:8px; font:inherit; color:var(--primary-text-color); background:var(--card-background-color); border:1px solid var(--divider-color); border-radius:6px; }
+        .filter-help { margin:4px 0; overflow-wrap:anywhere; }
         .muted { color:var(--secondary-text-color); }
         .error { color:var(--error-color); }
         form { display:flex; gap:8px; margin:12px 0; }
@@ -382,6 +444,29 @@ class HaListsPanel extends HTMLElement {
       this._nav.setAttribute("aria-label", "Configured to-do lists");
       const article = document.createElement("article");
       this._heading = document.createElement("h2");
+      this._filters = document.createElement("div");
+      this._filters.className = "filters";
+      const filterLabel = document.createElement("label");
+      filterLabel.append("Show tasks");
+      this._filterSelect = document.createElement("select");
+      for (const [value, title] of [["all", "All"], ["active", "Active"],
+        ["completed", "Completed"], ["today", "Due today"], ["overdue", "Overdue"]]) {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = title;
+        this._filterSelect.append(option);
+      }
+      this._filterSelect.addEventListener("change", () => {
+        this._filter = this._filterSelect.value;
+        this.render();
+      });
+      filterLabel.append(this._filterSelect);
+      this._filterCount = document.createElement("span");
+      this._filterCount.setAttribute("role", "status");
+      this._filterCount.setAttribute("aria-live", "polite");
+      this._filters.append(filterLabel, this._filterCount);
+      this._filterHelp = document.createElement("p");
+      this._filterHelp.className = "filter-help muted";
       this._form = document.createElement("form");
       // Use Home Assistant's native input component for companion-app focus handling.
       // ha-input superseded ha-textfield in HA 2026.4.
@@ -500,7 +585,7 @@ class HaListsPanel extends HTMLElement {
       this._editError = document.createElement("p");
       this._editError.className = "error";
       this._editError.setAttribute("role", "alert");
-      article.append(this._heading, this._form, this._editForm, this._editError, this._results);
+      article.append(this._heading, this._filters, this._filterHelp, this._form, this._editForm, this._editError, this._results);
       layout.append(this._nav, article);
       this._main.append(h1, layout);
       this.shadowRoot.replaceChildren(style, this._main);
@@ -541,6 +626,14 @@ class HaListsPanel extends HTMLElement {
       this._input.value = this._draft;
     }
     this.renderEditor();
+    const visibleItems = this.filteredItems();
+    this._filters.hidden = !selected;
+    this._filterSelect.value = this._filter;
+    this._filterCount.textContent = this._loading ? "Loading tasks…" : `${visibleItems.length} of ${this._items.length} tasks`;
+    this._filterHelp.hidden = !selected || !["today", "overdue"].includes(this._filter);
+    this._filterHelp.textContent = (this._filter === "today"
+      ? "Unfinished tasks due today. " : "Unfinished tasks past their deadline. ") +
+      "Time zone: " + Intl.DateTimeFormat().resolvedOptions().timeZone;
     const results = [];
     if (this._loading) {
       const p = document.createElement("p");
@@ -555,17 +648,17 @@ class HaListsPanel extends HTMLElement {
       results.push(p);
     }
     if (!this._loading && selected) {
-      if (!this._items.length) {
+      if (!visibleItems.length) {
         const p = document.createElement("p");
         p.className = "muted";
-        p.textContent = "No tasks found.";
+        p.textContent = this._items.length ? "No tasks match this filter." : "No tasks found.";
         results.push(p);
       } else {
         const list = document.createElement("ul");
         // Local To-do appends new items. Reverse the active items for display.
         const active = [];
         const completed = [];
-        for (const item of this._items) {
+        for (const item of visibleItems) {
           (item.status === "completed" ? completed : active).push(item);
         }
         const sorted = [...active.reverse(), ...completed];
@@ -598,6 +691,7 @@ class HaListsPanel extends HTMLElement {
       }
     }
     this._results.replaceChildren(...results);
+    this.scheduleFilterRefresh();
   }
 
   renderEditor() {

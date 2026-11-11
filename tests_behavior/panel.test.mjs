@@ -11,11 +11,18 @@ const deferred = () => {
   return { promise, resolve, reject };
 };
 
-async function setup({ lists = ["todo.groceries"], items = [], service, readItems, supportedFeatures = 6 } = {}) {
+async function setup({ lists = ["todo.groceries"], items = [], service, readItems, supportedFeatures = 6, clock } = {}) {
   const dom = new JSDOM("<!doctype html><html><body></body></html>", {
     runScripts: "outside-only", pretendToBeVisual: true,
   });
   const { window } = dom;
+  if (clock) {
+    const RealDate = window.Date;
+    window.Date = class extends RealDate {
+      constructor(...args) { super(...(args.length ? args : [clock()])); }
+      static now() { return new RealDate(clock()).getTime(); }
+    };
+  }
   class HaInput extends window.HTMLElement {
     constructor() { super(); this.value = ""; }
   }
@@ -526,4 +533,198 @@ test("structured Home Assistant errors show the message and preserve the draft",
   await tick(); await tick();
   assert.equal(input.value, "Keep this draft");
   assert.match(panel.shadowRoot.textContent, /Unable to add task: Synthetic provider unavailable/);
+});
+
+function selectFilter(window, panel, value) {
+  const select = panel.shadowRoot.querySelector("select");
+  select.value = value;
+  select.dispatchEvent(new window.Event("change", { bubbles: true }));
+}
+
+function visibleTitles(panel) {
+  return rows(panel).map((row) => row.querySelector(".task-title, span").textContent);
+}
+
+test("All, Active and Completed preserve provider order, drafts and the selected filter", async () => {
+  const items = [
+    { uid: "a", summary: "First active", status: "needs_action" },
+    { uid: "c", summary: "Completed task", status: "completed" },
+    { uid: "b", summary: "Second active", status: "needs_action" },
+  ];
+  const { panel, window, requests, calls } = await setup({ items, lists: ["todo.groceries", "todo.hardware"] });
+  const input = panel._input;
+  input.value = "Unsent draft";
+  input.dispatchEvent(new window.Event("input"));
+  const reads = requests.length;
+  selectFilter(window, panel, "active");
+  assert.deepEqual(visibleTitles(panel), ["Second active", "First active"]);
+  assert.equal(panel.shadowRoot.querySelector('[role="status"]').textContent, "2 of 3 tasks");
+  selectFilter(window, panel, "completed");
+  assert.deepEqual(visibleTitles(panel), ["Completed task"]);
+  assert.equal(panel._input, input);
+  assert.equal(input.value, "Unsent draft");
+  assert.equal(requests.length, reads);
+  assert.equal(calls.length, 0);
+  panel.shadowRoot.querySelectorAll("nav button")[1].click();
+  await tick(); await tick();
+  assert.equal(panel.shadowRoot.querySelector("select").value, "completed");
+  selectFilter(window, panel, "all");
+  assert.deepEqual(visibleTitles(panel), ["Second active", "First active", "Completed task"]);
+  assert.deepEqual(items.map((item) => item.uid), ["a", "c", "b"]);
+  panel.remove(); window.close();
+});
+
+for (const [zone, expectedToday, expectedOverdue] of [
+  ["America/Chicago", ["Date Jan 5", "Timed past", "Timed future"], ["Date Jan 4", "Timed past"]],
+  ["Pacific/Kiritimati", ["Date Jan 6", "Timed past", "Timed future"], ["Date Jan 4", "Date Jan 5", "Timed past"]],
+  ["UTC", ["Date Jan 6", "Timed future"], ["Date Jan 4", "Date Jan 5", "Timed past"]],
+]) {
+  test(`date filters use ${zone} calendar days and absolute timed deadlines`, async () => {
+    const originalTZ = process.env.TZ;
+    process.env.TZ = zone;
+    let window;
+    try {
+      const items = [
+        { uid: "4", summary: "Date Jan 4", status: "needs_action", due: "2030-01-04" },
+        { uid: "5", summary: "Date Jan 5", status: "needs_action", due: "2030-01-05" },
+        { uid: "6", summary: "Date Jan 6", status: "needs_action", due: "2030-01-06" },
+        { uid: "p", summary: "Timed past", status: "needs_action", due: "2030-01-05T23:00:00Z" },
+        { uid: "f", summary: "Timed future", status: "needs_action", due: "2030-01-06T03:00:00Z" },
+        { uid: "c", summary: "Completed date", status: "completed", due: "2030-01-05" },
+        { uid: "n", summary: "No deadline", status: "needs_action" },
+        { uid: "i", summary: "Invalid deadline", status: "needs_action", due: "not a date" },
+        { uid: "x", summary: "Impossible date", status: "needs_action", due: "2030-02-30" },
+      ];
+      const state = await setup({ items, clock: () => "2030-01-06T00:30:00Z" });
+      window = state.window;
+      selectFilter(window, state.panel, "today");
+      assert.deepEqual(visibleTitles(state.panel).sort(), [...expectedToday].sort());
+      assert.match(state.panel._filterHelp.textContent, new RegExp(zone));
+      selectFilter(window, state.panel, "overdue");
+      assert.deepEqual(visibleTitles(state.panel).sort(), [...expectedOverdue].sort());
+      selectFilter(window, state.panel, "all");
+      assert.equal(rows(state.panel).length, items.length);
+      state.panel.remove();
+    } finally {
+      window?.close();
+      if (originalTZ === undefined) delete process.env.TZ;
+      else process.env.TZ = originalTZ;
+    }
+  });
+}
+
+test("filtered empty state, completion and rollback keep task data intact", async () => {
+  const { window, panel } = await setup({ items: [{ uid: "a", summary: "Milk", status: "needs_action" }],
+    service: async () => { throw { message: "Synthetic denied write" }; } });
+  selectFilter(window, panel, "completed");
+  assert.match(panel._results.textContent, /No tasks match this filter/);
+  selectFilter(window, panel, "active");
+  change(window, panel.shadowRoot.querySelector('input[type="checkbox"]'), true);
+  await tick(); await tick();
+  assert.deepEqual(visibleTitles(panel), ["Milk"]);
+  assert.match(panel._results.textContent, /Synthetic denied write/);
+  panel.remove(); window.close();
+});
+
+test("date filters refresh at deadline and midnight boundaries and clean up on disconnect", async () => {
+  const originalTZ = process.env.TZ;
+  process.env.TZ = "America/Chicago";
+  let window;
+  try {
+    let now = "2030-03-10T07:59:59Z";
+    const state = await setup({ clock: () => now, items: [
+      { uid: "a", summary: "At spring-forward", status: "needs_action", due: "2030-03-10T03:00:00-05:00" },
+      { uid: "b", summary: "Date only", status: "needs_action", due: "2030-03-10" },
+    ] });
+    window = state.window;
+    const pending = new Map();
+    let nextId = 0;
+    window.setTimeout = (callback, delay) => { pending.set(++nextId, { callback, delay }); return nextId; };
+    window.clearTimeout = (id) => pending.delete(id);
+    selectFilter(window, state.panel, "overdue");
+    assert.deepEqual(visibleTitles(state.panel), []);
+    assert.equal(pending.size, 1);
+    const first = pending.get(state.panel._filterTimer);
+    assert.equal(first.delay, 1001);
+    now = "2030-03-10T08:00:00.001Z";
+    pending.clear(); first.callback();
+    assert.deepEqual(visibleTitles(state.panel), ["At spring-forward"]);
+    selectFilter(window, state.panel, "today");
+    now = "2030-03-11T05:00:00Z";
+    window.document.dispatchEvent(new window.Event("visibilitychange"));
+    assert.equal(rows(state.panel).length, 0);
+    assert.equal(pending.size, 1);
+    state.panel.remove();
+    assert.equal(pending.size, 0);
+    assert.equal(state.panel._filterTimer, null);
+  } finally {
+    window?.close();
+    if (originalTZ === undefined) delete process.env.TZ;
+    else process.env.TZ = originalTZ;
+  }
+});
+
+test("switching filters preserves an unsaved task editor", async () => {
+  const { panel, window, calls } = await setup({ items: [
+    { uid: "a", summary: "Apples", status: "needs_action" },
+  ] });
+  const title = openRename(panel, "Apples");
+  title.value = "Unsaved title";
+  title.dispatchEvent(new window.Event("input", { bubbles: true }));
+  selectFilter(window, panel, "completed");
+  assert.equal(title.form.hidden, false);
+  assert.equal(title.value, "Unsaved title");
+  assert.equal(calls.length, 0);
+  selectFilter(window, panel, "active");
+  assert.equal(title.value, "Unsaved title");
+  panel.remove(); window.close();
+});
+
+test("repeated fall-back wall times have distinct overdue instants", async () => {
+  const originalTZ = process.env.TZ;
+  process.env.TZ = "America/Chicago";
+  let window;
+  try {
+    const state = await setup({ clock: () => "2030-11-03T07:15:00Z", items: [
+      { uid: "first", summary: "First 1:30", status: "needs_action", due: "2030-11-03T01:30:00-05:00" },
+      { uid: "second", summary: "Second 1:30", status: "needs_action", due: "2030-11-03T01:30:00-06:00" },
+    ] });
+    window = state.window;
+    selectFilter(window, state.panel, "today");
+    assert.deepEqual(visibleTitles(state.panel), ["Second 1:30", "First 1:30"]);
+    selectFilter(window, state.panel, "overdue");
+    assert.deepEqual(visibleTitles(state.panel), ["First 1:30"]);
+    state.panel.remove();
+  } finally {
+    window?.close();
+    if (originalTZ === undefined) delete process.env.TZ;
+    else process.env.TZ = originalTZ;
+  }
+});
+
+test("date-only deadlines stay due through the final local millisecond", async () => {
+  const originalTZ = process.env.TZ;
+  process.env.TZ = "America/Chicago";
+  let window;
+  try {
+    let now = "2030-01-06T05:59:59.999Z";
+    const state = await setup({ clock: () => now, items: [
+      { uid: "a", summary: "Ends at midnight", status: "needs_action", due: "2030-01-05" },
+    ] });
+    window = state.window;
+    selectFilter(window, state.panel, "today");
+    assert.deepEqual(visibleTitles(state.panel), ["Ends at midnight"]);
+    selectFilter(window, state.panel, "overdue");
+    assert.equal(rows(state.panel).length, 0);
+    now = "2030-01-06T06:00:00Z";
+    state.panel.render();
+    assert.deepEqual(visibleTitles(state.panel), ["Ends at midnight"]);
+    selectFilter(window, state.panel, "today");
+    assert.equal(rows(state.panel).length, 0);
+    state.panel.remove();
+  } finally {
+    window?.close();
+    if (originalTZ === undefined) delete process.env.TZ;
+    else process.env.TZ = originalTZ;
+  }
 });
