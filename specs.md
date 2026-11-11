@@ -224,6 +224,27 @@ other todo entities
 - Define list ownership and enforce owner-or-administrator task writes on the server. Native Home Assistant To-do lists currently follow Home Assistant entity permissions, including access granted to ordinary local users.
 - Add a real Home Assistant regression test with a list owner, an administrator, and another ordinary local user. Verify that the owner and administrator can add, rename, complete, reopen, and delete tasks. Verify that the other user is denied and the list stays unchanged, including when that user calls the native To-do actions directly.
 
+### Backlog — lower and verify the minimum Home Assistant version (priority)
+
+- [ ] Replace the provisional HA 2026.11.1 user requirement with an older,
+  deliberately chosen support baseline. Users should not need the latest HA
+  release merely because development/testing uses it. Determine the exact
+  older version from API availability and compatibility tests; do not assume it.
+- [ ] Audit frontend components (including `ha-input`), native To-do features,
+  lifecycle return contracts, and Python/test-framework requirements. Make the
+  compatibility adjustments needed for the chosen older release.
+- [ ] Run the Python integration suite and installed-HA browser suite against
+  that exact minimum version, with its matching frontend, Python and test
+  dependencies. Verify setup/reload, configuration, task operations, persistence,
+  permissions, and failure recovery before declaring support.
+- [ ] Add CI coverage for both the chosen minimum and the current supported HA
+  release on pushes and pull requests, keeping the latest development runtime
+  independent from the minimum version required of users.
+- [ ] Update `hacs.json`, README, dependency/test configurations and compatibility
+  documentation together after the older baseline passes. Until then, the
+  published 2026.11.1 minimum remains provisional; this backlog entry does not
+  claim older versions already work or change the installed requirement.
+
 ## 12. Approved architecture decisions and open implementation details
 
 **Approved:** Extended task data and suggestion history reside in Home Assistant-managed local storage. Initial provider portability is Option A (rebind without task migration). Option B remains a documented future goal, not an initial-release requirement. Package as one HACS-compatible custom integration with a bundled dedicated frontend panel; no standalone server or add-on is required.
@@ -349,7 +370,8 @@ Run the Python suite once in push CI and publish coverage as a diagnostic report
 
 ### Verified runtime and reliability baseline (2026-11-11)
 
-- Minimum supported Home Assistant is 2026.11.1, declared in `hacs.json` and
+- The provisional minimum is Home Assistant 2026.11.1, pending the priority
+  compatibility backlog above. It is currently declared in `hacs.json` and
   exercised by both Python and installed-HA browser tests. Python is 3.14.2+;
   frontend 20261028.5 and Local To-do ical 14.3.1 match this HA release.
 - The official `pytest-homeassistant==2026.11.1` package replaces the retired
