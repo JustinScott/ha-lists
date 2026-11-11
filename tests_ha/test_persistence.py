@@ -84,6 +84,21 @@ async def test_selected_list_and_tasks_survive_home_assistant_restart(
             {"entity_id": LIST_ID, "item": created["uid"], "rename": "Green apples"},
             blocking=True,
         )
+        await first.services.async_call(
+            "todo",
+            "add_item",
+            {"entity_id": LIST_ID, "item": "Green apples"},
+            blocking=True,
+        )
+        duplicate = next(
+            task for task in await get_tasks(first) if task["uid"] != created["uid"]
+        )
+        await first.services.async_call(
+            "todo",
+            "remove_item",
+            {"entity_id": LIST_ID, "item": duplicate["uid"]},
+            blocking=True,
+        )
         assert first.states.get(LIST_ID).state == "0"
 
     async with running_hass(tmp_path) as restarted:
@@ -102,7 +117,7 @@ async def test_selected_list_and_tasks_survive_home_assistant_restart(
         assert restarted.states.get(LIST_ID).state == "0"
 
 
-async def test_read_only_websocket_cannot_add_or_update_tasks(
+async def test_read_only_websocket_cannot_write_tasks(
     hass, hass_ws_client, hass_read_only_user, tmp_path
 ):
     """Native task writes require control permission even for a visible list."""
@@ -132,6 +147,7 @@ async def test_read_only_websocket_cannot_add_or_update_tasks(
         (2, "add_item", {"item": "Unauthorized task"}),
         (3, "update_item", {"item": created["uid"], "status": "completed"}),
         (4, "update_item", {"item": created["uid"], "rename": "Unauthorized rename"}),
+        (5, "remove_item", {"item": created["uid"]}),
     ):
         await client.send_json(
             {

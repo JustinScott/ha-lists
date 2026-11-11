@@ -11,7 +11,7 @@ const deferred = () => {
   return { promise, resolve, reject };
 };
 
-async function setup({ lists = ["todo.groceries"], items = [], service, readItems, supportedFeatures = 4 } = {}) {
+async function setup({ lists = ["todo.groceries"], items = [], service, readItems, supportedFeatures = 6 } = {}) {
   const dom = new JSDOM("<!doctype html><html><body></body></html>", {
     runScripts: "outside-only", pretendToBeVisual: true,
   });
@@ -42,6 +42,10 @@ async function setup({ lists = ["todo.groceries"], items = [], service, readItem
       calls.push({ domain, action, data });
       if (service) return service(domain, action, data);
       if (action === "add_item") items.push({ uid: "new-" + items.length, summary: data.item, status: "needs_action" });
+      if (action === "remove_item") {
+        const index = items.findIndex((item) => item.uid === data.item);
+        if (index !== -1) items.splice(index, 1);
+      }
       if (action === "update_item") {
         const item = items.find((candidate) => (candidate.uid || candidate.summary) === data.item);
         if (item && data.status) item.status = data.status;
@@ -325,4 +329,64 @@ test("an external rename detected on save preserves the newer title", async () =
   assert.equal(rows(panel)[0].textContent, "Changed elsewhere");
   assert.match(panel.shadowRoot.querySelector('.edit-form + [role="alert"]').textContent, /changed elsewhere/);
   assert.equal(calls.length, 0);
+});
+
+function deleteButton(panel, text) {
+  return [...panel.shadowRoot.querySelectorAll(".edit-form button")].find(
+    (button) => button.textContent === text && !button.hidden
+  );
+}
+
+test("delete confirmation names the task and keeping it leaves the draft and list intact", async () => {
+  const { panel, calls } = await setup({ items: [{ uid: "one", summary: "Apples" }] });
+  const input = openRename(panel, "Apples");
+  input.value = "Unsaved draft";
+  deleteButton(panel, "Delete").click();
+  assert.match(panel.shadowRoot.querySelector(".delete-confirmation").textContent, /Delete .*Apples/);
+  assert.equal(panel.shadowRoot.activeElement.textContent, "Keep task");
+  deleteButton(panel, "Keep task").click();
+  assert.equal(input.value, "Unsaved draft");
+  assert.deepEqual(rows(panel).map((row) => row.textContent), ["Apples"]);
+  assert.equal(calls.length, 0);
+});
+
+test("a confirmed delete removes the selected UID among duplicate titles", async () => {
+  const { panel, calls, items } = await setup({ items: [
+    { uid: "older", summary: "Apples" },
+    { uid: "newer", summary: "Apples" },
+  ] });
+  openRename(panel, "Apples");
+  deleteButton(panel, "Delete").click();
+  deleteButton(panel, "Delete task").click();
+  await tick();
+  assert.deepEqual(JSON.parse(JSON.stringify(calls[0])), {
+    domain: "todo", action: "remove_item", data: { entity_id: "todo.groceries", item: "newer" },
+  });
+  assert.deepEqual(items.map((item) => item.uid), ["older"]);
+  assert.deepEqual(rows(panel).map((row) => row.textContent), ["Apples"]);
+});
+
+test("a failed delete leaves the task visible and allows retry", async () => {
+  const { panel } = await setup({
+    items: [{ uid: "one", summary: "Apples" }],
+    service: async () => { throw Error("provider offline"); },
+  });
+  openRename(panel, "Apples");
+  deleteButton(panel, "Delete").click();
+  deleteButton(panel, "Delete task").click();
+  await tick();
+  assert.equal(rows(panel)[0].textContent, "Apples");
+  assert.match(panel.shadowRoot.querySelector('[role="alert"]').textContent, /Unable to delete task.*provider offline/);
+  assert.equal(deleteButton(panel, "Delete task").disabled, false);
+});
+
+test("delete-only providers can open the editor and providers without delete hide the action", async () => {
+  const items = [{ uid: "one", summary: "Apples" }];
+  const renameOnly = await setup({ items, supportedFeatures: 4 });
+  openRename(renameOnly.panel, "Apples");
+  assert.equal(deleteButton(renameOnly.panel, "Delete"), undefined);
+  const deleteOnly = await setup({ items, supportedFeatures: 2 });
+  deleteOnly.panel.shadowRoot.querySelector('[aria-label="Open task Apples"]').click();
+  assert.ok(deleteButton(deleteOnly.panel, "Delete"));
+  assert.equal(deleteOnly.panel.shadowRoot.querySelector(".title-input").hidden, true);
 });

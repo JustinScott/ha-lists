@@ -54,7 +54,7 @@ addresses, or real Home Assistant configuration.
 
 1. Install this integration on a **development** Home Assistant instance, restart it, and add **HA Lists** under Settings → Devices & services.
 2. Open the HA Lists integration's **Configure** options and select one or more existing native `todo` entities. Create those lists through their respective Home Assistant provider integrations first; HA Lists does not create provider lists.
-3. Open the **Lists** sidebar entry. Select a list by its displayed name to inspect, add, or complete tasks. Select a task title to rename it on lists that support updates.
+3. Open the **Lists** sidebar entry. Select a list by its displayed name to inspect, add, or complete tasks. Select a task title to rename or delete it where the provider supports those actions. Delete asks you to confirm the task first.
 
 The integration requires Home Assistant's frontend, HTTP, panel, and to-do components. It uses Home Assistant's authenticated frontend connection; there is no separate HA Lists account or public server. The initial configuration does not require a cloud provider.
 
@@ -64,7 +64,7 @@ Remove the HA Lists integration entry from Settings → Devices & services, then
 
 ## Supported features and current limitations
 
-- **Available:** One local HA Lists config entry; select multiple existing native `todo` entities; named-list sidebar; task retrieval, creation, renaming, completion and reopening; loading and error messages.
-- **Not yet available:** Creating provider lists; editing detailed task fields or deleting tasks in the HA Lists panel; rich metadata; autocomplete/history; Assist-specific routing; provider migration.
+- **Available:** One local HA Lists config entry; select multiple existing native `todo` entities; named-list sidebar; task retrieval, creation, renaming, completion, reopening, and deletion; loading and error messages.
+- **Not yet available:** Creating provider lists; editing detailed task fields in the HA Lists panel; rich metadata; autocomplete/history; Assist-specific routing; provider migration.
 
 The underlying `todo` integrations remain the source of truth for tasks. Removing HA Lists does not intentionally remove provider tasks. Provider capabilities vary; not every provider exposes completed items or rich task fields.

@@ -1,4 +1,6 @@
-const UPDATE_TODO_ITEM = 4; // Home Assistant TodoListEntityFeature
+// Home Assistant TodoListEntityFeature
+const DELETE_TODO_ITEM = 2;
+const UPDATE_TODO_ITEM = 4;
 
 /** Lists panel: selected provider discovery and task retrieval and native todo item creation. */
 class HaListsPanel extends HTMLElement {
@@ -165,22 +167,26 @@ class HaListsPanel extends HTMLElement {
     }
   }
 
-  canRename(entity) {
+  supportsTaskAction(entity, feature) {
     return entity && entity.state !== "unavailable" && entity.state !== "unknown"
-      && (entity.attributes?.supported_features & UPDATE_TODO_ITEM) !== 0;
+      && (entity.attributes?.supported_features & feature) !== 0;
   }
 
-  startRename(item) {
+  openTaskEditor(item) {
     this._edit = {
-      uid: item.uid, title: item.summary || "", saving: false, error: "",
+      uid: item.uid, title: item.summary || "", saving: false, confirmingDelete: false, error: "",
     };
     this._titleInput.value = this._edit.title;
     this.render();
-    this._titleInput.focus();
-    this._titleInput.select();
+    if (this._titleInput.hidden) {
+      this._deleteTask.focus();
+    } else {
+      this._titleInput.focus();
+      this._titleInput.select();
+    }
   }
 
-  closeRename(uid) {
+  closeTaskEditor(uid) {
     this._edit = null;
     this.render();
     const button = [...this._results.querySelectorAll("button[data-uid]")]
@@ -193,9 +199,9 @@ class HaListsPanel extends HTMLElement {
     const entityId = this._selected;
     const title = this._titleInput.value.trim();
     const entity = this.availableLists.find((candidate) => candidate.entity_id === entityId);
-    if (!edit || edit.saving || !title || !this.canRename(entity)) return;
+    if (!edit || edit.saving || edit.confirmingDelete || !title || !this.supportsTaskAction(entity, UPDATE_TODO_ITEM)) return;
     if (title === edit.title) {
-      this.closeRename(edit.uid);
+      this.closeTaskEditor(edit.uid);
       return;
     }
 
@@ -217,7 +223,7 @@ class HaListsPanel extends HTMLElement {
       });
       if (this._edit !== edit || !this.isConnected) return;
       await this.loadItems();
-      if (this._edit === edit && this.isConnected) this.closeRename(edit.uid);
+      if (this._edit === edit && this.isConnected) this.closeTaskEditor(edit.uid);
     } catch (error) {
       if (this._edit === edit) {
         edit.error = "Unable to rename task: " + String(error);
@@ -228,6 +234,46 @@ class HaListsPanel extends HTMLElement {
         edit.saving = false;
         this.render();
       }
+    }
+  }
+
+  setDeleteConfirmation(confirming) {
+    const edit = this._edit;
+    if (!edit || edit.saving) return;
+    edit.confirmingDelete = confirming;
+    edit.error = "";
+    this.renderEditor();
+    (confirming ? this._cancelDelete : this._deleteTask).focus();
+  }
+
+  async deleteItem() {
+    const edit = this._edit;
+    const entityId = this._selected;
+    const connection = this._connection;
+    const selected = this.availableLists.find((entity) => entity.entity_id === entityId);
+    if (!edit?.confirmingDelete || edit.saving || !this.supportsTaskAction(selected, DELETE_TODO_ITEM)) return;
+    const key = entityId + ":" + edit.uid;
+    if (this._updatingItems.has(key)) return;
+
+    this._updatingItems.add(key);
+    edit.saving = true;
+    edit.error = "";
+    this.render();
+    try {
+      await this._hass.callService("todo", "remove_item", {
+        entity_id: entityId, item: edit.uid,
+      });
+      if (this.isConnected && this._connection === connection && this._selected === entityId) {
+        await this.loadItems();
+        if (this._edit === edit && this.isConnected) this.closeTaskEditor(edit.uid);
+      }
+    } catch (error) {
+      if (this._edit === edit) edit.error = "Unable to delete task: " + String(error);
+    } finally {
+      this._updatingItems.delete(key);
+      edit.saving = false;
+      this.render();
+      if (this._edit === edit && edit.error) this._cancelDelete.focus();
     }
   }
 
@@ -254,6 +300,8 @@ class HaListsPanel extends HTMLElement {
         .edit-form { align-items:center; flex-wrap:wrap; }
         .task-title { border:0; background:transparent; color:inherit; font:inherit; padding:6px 0; text-align:left; cursor:pointer; overflow-wrap:anywhere; }
         .title-input { font:inherit; padding:8px; }
+        .delete-confirmation { flex-basis:100%; }
+        .delete-action { color:var(--error-color); }
         form button { padding:10px 14px; font:inherit; cursor:pointer; }
         li { padding:10px 0; border-bottom:1px solid var(--divider-color); display:flex; align-items:center; gap:12px; }
         li input[type=checkbox] { width:22px; height:22px; flex:none; accent-color:var(--primary-color); }
@@ -313,9 +361,9 @@ class HaListsPanel extends HTMLElement {
       this._results = document.createElement("div");
       this._editForm = document.createElement("form");
       this._editForm.className = "edit-form";
-      const titleLabel = document.createElement("label");
-      titleLabel.htmlFor = "task-title";
-      titleLabel.textContent = "Task title";
+      this._titleLabel = document.createElement("label");
+      this._titleLabel.htmlFor = "task-title";
+      this._titleLabel.textContent = "Task title";
       this._titleInput = document.createElement("input");
       this._titleInput.id = "task-title";
       this._titleInput.className = "title-input";
@@ -328,18 +376,38 @@ class HaListsPanel extends HTMLElement {
       this._cancelTitle = document.createElement("button");
       this._cancelTitle.type = "button";
       this._cancelTitle.textContent = "Cancel";
-      this._cancelTitle.addEventListener("click", () => this.closeRename(this._edit.uid));
+      this._cancelTitle.addEventListener("click", () => this.closeTaskEditor(this._edit.uid));
+      this._deleteTask = document.createElement("button");
+      this._deleteTask.type = "button";
+      this._deleteTask.className = "delete-action";
+      this._deleteTask.textContent = "Delete";
+      this._deleteTask.addEventListener("click", () => this.setDeleteConfirmation(true));
+      this._deletePrompt = document.createElement("p");
+      this._deletePrompt.className = "delete-confirmation";
+      this._cancelDelete = document.createElement("button");
+      this._cancelDelete.type = "button";
+      this._cancelDelete.textContent = "Keep task";
+      this._cancelDelete.addEventListener("click", () => this.setDeleteConfirmation(false));
+      this._confirmDelete = document.createElement("button");
+      this._confirmDelete.type = "button";
+      this._confirmDelete.className = "delete-action";
+      this._confirmDelete.textContent = "Delete task";
+      this._confirmDelete.addEventListener("click", () => this.deleteItem());
       this._editForm.addEventListener("submit", (event) => {
         event.preventDefault();
         this.saveTitle();
       });
       this._editForm.addEventListener("keydown", (event) => {
-        if (event.key === "Escape" && !this._edit?.saving) {
+        if (event.key === "Escape" && this._edit && !this._edit.saving) {
           event.preventDefault();
-          this.closeRename(this._edit.uid);
+          if (this._edit.confirmingDelete) this.setDeleteConfirmation(false);
+          else this.closeTaskEditor(this._edit.uid);
         }
       });
-      this._editForm.append(titleLabel, this._titleInput, this._saveTitle, this._cancelTitle);
+      this._editForm.append(
+        this._titleLabel, this._titleInput, this._saveTitle, this._cancelTitle, this._deleteTask,
+        this._deletePrompt, this._cancelDelete, this._confirmDelete,
+      );
       this._editError = document.createElement("p");
       this._editError.className = "error";
       this._editError.setAttribute("role", "alert");
@@ -421,15 +489,16 @@ class HaListsPanel extends HTMLElement {
           checkbox.disabled = !itemId || this._updatingItems.has(this._selected + ":" + itemId);
           checkbox.setAttribute("aria-label", (checkbox.checked ? "Reopen " : "Complete ") + (item.summary || "Untitled task"));
           checkbox.addEventListener("change", () => this.setItemCompleted(item, checkbox.checked));
-          const editable = item.uid && this.canRename(selected);
+          const canRename = this.supportsTaskAction(selected, UPDATE_TODO_ITEM);
+          const editable = item.uid && (canRename || this.supportsTaskAction(selected, DELETE_TODO_ITEM));
           const label = document.createElement(editable ? "button" : "span");
           if (editable) {
             label.type = "button";
             label.className = "task-title";
             label.dataset.uid = item.uid;
-            label.setAttribute("aria-label", "Rename " + (item.summary || "Untitled task"));
-            label.disabled = Boolean(this._edit);
-            label.addEventListener("click", () => this.startRename(item));
+            label.setAttribute("aria-label", (canRename ? "Rename " : "Open task ") + (item.summary || "Untitled task"));
+            label.disabled = Boolean(this._edit) || this._updatingItems.has(this._selected + ":" + item.uid);
+            label.addEventListener("click", () => this.openTaskEditor(item));
           }
           label.textContent = item.summary || "Untitled task";
           if (checkbox.checked) label.classList.add("completed");
@@ -445,9 +514,20 @@ class HaListsPanel extends HTMLElement {
   renderEditor() {
     const edit = this._edit;
     const selected = this.availableLists.find((entity) => entity.entity_id === this._selected);
+    const confirming = Boolean(edit?.confirmingDelete);
+    const canRename = this.supportsTaskAction(selected, UPDATE_TODO_ITEM);
+    const canDelete = this.supportsTaskAction(selected, DELETE_TODO_ITEM);
     this._editForm.hidden = !edit;
+    this._titleLabel.hidden = this._titleInput.hidden = this._saveTitle.hidden = confirming || !canRename;
+    this._cancelTitle.hidden = confirming;
+    this._deleteTask.hidden = confirming || !canDelete;
+    this._deleteTask.disabled = Boolean(edit?.saving);
+    this._deletePrompt.hidden = this._cancelDelete.hidden = this._confirmDelete.hidden = !confirming;
+    this._deletePrompt.textContent = confirming ? `Delete “${edit.title || "Untitled task"}”?` : "";
+    this._cancelDelete.disabled = Boolean(edit?.saving);
+    this._confirmDelete.disabled = Boolean(edit?.saving) || !canDelete;
     this._titleInput.readOnly = Boolean(edit?.saving);
-    this._saveTitle.disabled = !edit || edit.saving || !this._titleInput.value.trim() || !this.canRename(selected);
+    this._saveTitle.disabled = !edit || edit.saving || !this._titleInput.value.trim() || !this.supportsTaskAction(selected, UPDATE_TODO_ITEM);
     this._cancelTitle.disabled = Boolean(edit?.saving);
     this._editError.hidden = !edit?.error;
     this._editError.textContent = edit?.error || "";

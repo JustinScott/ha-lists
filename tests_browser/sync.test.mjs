@@ -155,6 +155,23 @@ test("native To-do and HA Lists share task changes across browser sessions", { t
     await complete.click();
     await lists.locator(`input[aria-label="Reopen ${renamed}"]:checked`).waitFor();
     await nativeCard.locator(".completed").getByText(renamed, { exact: true }).waitFor();
+
+    // Give the active and completed tasks the same title. Delete the completed UID.
+    await nativeInput.fill(renamed);
+    await nativeInput.press("Enter");
+    const completedTask = lists.locator("li").filter({
+      has: lists.getByRole("checkbox", { name: `Reopen ${renamed}`, exact: true }),
+    });
+    await lists.getByRole("checkbox", { name: `Complete ${renamed}`, exact: true }).waitFor();
+    await completedTask.getByRole("button", { name: `Rename ${renamed}` }).tap();
+    await lists.getByRole("button", { name: "Delete", exact: true }).tap();
+    await lists.getByText(`Delete “${renamed}”?`, { exact: true }).waitFor();
+    await lists.getByRole("button", { name: "Delete task", exact: true }).tap();
+
+    await completedTask.waitFor({ state: "detached" });
+    await nativeCard.locator(".completed").getByText(renamed, { exact: true }).waitFor({ state: "detached" });
+    assert.equal(await lists.getByRole("checkbox", { name: `Complete ${renamed}`, exact: true }).count(), 1);
+    assert.equal(await nativeCard.getByText(renamed, { exact: true }).count(), 1);
   } catch (error) {
     const logs = created && await docker("docker", ["logs", "--tail", "50", name],
       { timeout: 5_000 }).catch(() => null);
