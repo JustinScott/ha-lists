@@ -27,6 +27,14 @@ Build a free, local-first, application-style list manager integrated into Home A
 - Android: responsive list selector showing full names, touch-friendly rows, accessible controls, and a full-screen task editor.
 - Follow Home Assistant theme, light/dark mode, spacing, accessibility and safe-area conventions. No separate login or publicly exposed web server.
 - Provide loading, empty, offline, permission-denied, and error states; maintain keyboard and screen-reader support.
+- The panel must provide its own themed header and Home Assistant sidebar menu
+  control, using the native menu component so HA owns visibility, localization,
+  keyboard handling and sidebar toggling. Honor the HA-supplied `narrow` state.
+  Verify opening/closing the real sidebar on mobile, keyboard activation,
+  navigation to another panel and back, and draft retention during drawer and
+  viewport changes in the installed-HA browser suite. A heading or overflow
+  check alone does not establish shell/navigation acceptance. HA may recreate
+  the panel on route changes; cross-panel draft persistence is not added here.
 
 ### Lists and items
 

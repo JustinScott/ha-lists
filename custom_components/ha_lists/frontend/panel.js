@@ -11,6 +11,7 @@ class HaListsPanel extends HTMLElement {
     super();
     this.attachShadow({ mode: "open" });
     this._hass = null;
+    this._narrow = false;
     this._connection = null;
     this._configured = null;
     this._selected = "";
@@ -55,6 +56,12 @@ class HaListsPanel extends HTMLElement {
   }
 
   set panel(value) { this._panel = value; }
+  set narrow(value) {
+    this._narrow = Boolean(value);
+    this.toggleAttribute("narrow", this._narrow);
+    this.render();
+  }
+  get narrow() { return this._narrow; }
   connectedCallback() {
     document.addEventListener("visibilitychange", this._onVisibility);
     this.render();
@@ -450,7 +457,8 @@ class HaListsPanel extends HTMLElement {
       style.textContent = `
         :host { display:block; color:var(--primary-text-color); font-family:sans-serif; }
         main { max-width:1200px; margin:auto; padding:24px; }
-        h1 { margin:0 0 20px; font-size:26px; }
+        header { display:flex; align-items:center; gap:8px; min-height:var(--header-height,56px); padding:0 8px; position:sticky; top:0; z-index:1; color:var(--app-header-text-color,var(--primary-text-color)); background:var(--app-header-background-color,var(--primary-background-color)); }
+        header h1 { margin:0; font-size:20px; font-weight:400; }
         .layout { display:grid; grid-template-columns:minmax(220px,290px) minmax(0,1fr); gap:18px; }
         nav,article { padding:18px; background:var(--card-background-color); border:1px solid var(--divider-color); border-radius:12px; }
         nav button { display:block; width:100%; border:0; border-radius:8px; background:transparent; color:inherit; text-align:left; font:inherit; padding:12px; cursor:pointer; overflow-wrap:anywhere; }
@@ -483,10 +491,17 @@ class HaListsPanel extends HTMLElement {
         li .completed { text-decoration:line-through; color:var(--secondary-text-color); }
         ul { list-style:none; padding:0; }
         @media(max-width:650px) { main { padding:12px; } .layout { grid-template-columns:1fr; } }
+        :host([narrow]) main { padding:12px; }
+        :host([narrow]) .layout { grid-template-columns:1fr; }
       `;
+      const header = document.createElement("header");
+      // HA owns sidebar visibility, localization, keyboard interaction and the
+      // hass-toggle-menu event through its native context-aware menu component.
+      const menu = document.createElement("ha-menu-button");
       this._main = document.createElement("main");
       const h1 = document.createElement("h1");
       h1.textContent = "Lists";
+      header.append(menu, h1);
       const layout = document.createElement("div");
       layout.className = "layout";
       this._nav = document.createElement("nav");
@@ -657,8 +672,8 @@ class HaListsPanel extends HTMLElement {
       this._editError.setAttribute("role", "alert");
       article.append(this._heading, this._searchControls, this._filters, this._filterHelp, this._form, this._editForm, this._editError, this._results);
       layout.append(this._nav, article);
-      this._main.append(h1, layout);
-      this.shadowRoot.replaceChildren(style, this._main);
+      this._main.append(layout);
+      this.shadowRoot.replaceChildren(style, header, this._main);
     }
     const entities = this.availableLists;
     const selected = entities.find((entity) => entity.entity_id === this._selected);

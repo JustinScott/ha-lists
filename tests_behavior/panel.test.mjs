@@ -85,6 +85,31 @@ function change(window, checkbox, checked) {
   checkbox.dispatchEvent(new window.Event("change", { bubbles: true }));
 }
 
+test("HA narrow updates preserve the native header, inputs, drafts and provider requests", async () => {
+  const { panel, window, requests } = await setup({ items: [{ uid: "a", summary: "Apples" }] });
+  const menu = panel.shadowRoot.querySelector("header ha-menu-button");
+  assert.ok(menu);
+  assert.equal(panel.shadowRoot.querySelector("header h1").textContent, "Lists");
+  const title = openRename(panel, "Apples");
+  title.value = "Unsaved title";
+  panel._input.value = "Unsent task";
+  panel._input.dispatchEvent(new window.Event("input"));
+  const searchInput = search(window, panel, "apple");
+  searchInput.focus();
+  const reads = requests.length;
+  panel.narrow = true;
+  assert.equal(panel.narrow, true);
+  assert.equal(panel.hasAttribute("narrow"), true);
+  panel.narrow = false;
+  assert.equal(panel.hasAttribute("narrow"), false);
+  assert.equal(panel.shadowRoot.querySelector("header ha-menu-button"), menu);
+  assert.equal(panel.shadowRoot.activeElement, searchInput);
+  assert.equal(title.value, "Unsaved title");
+  assert.equal(panel._input.value, "Unsent task");
+  assert.equal(requests.length, reads);
+  panel.remove(); window.close();
+});
+
 test("search matches literal titles and descriptions, composes with filters and clears", async () => {
   const { panel, window, calls, requests } = await setup({ items: [
     { uid: "a", summary: "Apple juice", status: "needs_action" },
