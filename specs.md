@@ -274,17 +274,17 @@ other todo entities
 ### Custom-component test framework requirements
 
 - Test against a declared, supported HA version using `pytest-homeassistant-custom-component`, `pytest`, and `pytest-asyncio`. Set `asyncio_mode = "auto"`; ensure the repository root is importable (e.g., `python -m pytest`). Use `enable_custom_integrations` correctly and preserve special fixture setup order.
-- Use `MockConfigEntry` from `pytest_homeassistant_custom_component.common`, not Home Assistant Core's `tests.common` import. Create realistic fake `todo` states and providers. Keep fixtures deterministic, synthetic, and free of production data; colocate `fixtures/` files with tests. Configure the framework-specific Syrupy extension if snapshots are introduced.
+- Use `MockConfigEntry` from `pytest_homeassistant_custom_component.common`, not Home Assistant Core's `tests.common` import. Use native Local To-do for task behavior and persistence. Use synthetic entity states or provider doubles for cases that need deterministic control. Keep fixtures deterministic, synthetic, and free of production data; colocate `fixtures/` files with tests. Configure the framework-specific Syrupy extension if snapshots are introduced.
 - Exercise integration behavior through HA interfaces: configuration/options flows, config entry setup/unload, HA states/services, authenticated WebSocket clients, and registries when relevant. Pure-logic unit tests are complementary. Source-text contract checks and JavaScript/Python syntax checks alone do not establish runtime correctness.
 - Write typed tests, use parameterization with named cases instead of branching, use `@pytest.mark.usefixtures` for unused fixtures, and avoid fragile time-dependent expectations. Use a freezer fixture for time. Every bug fix must have a regression test that fails without the fix.
 - Test configuration flow success, duplicate abort, validation errors and recovery, options persistence and invalid selection, startup/shutdown, deleted/unavailable lists, provider errors, permission enforcement, malformed WebSocket inputs, asynchronous race handling, and changes to persisted data. Expand tests when new capabilities are introduced; do not prematurely assert support for features not yet implemented.
-- Measure coverage. Target full config-flow coverage (Bronze expectation) and progress toward >95% coverage of each module (Silver expectation); do not label the custom integration as officially HA quality-scale certified. Document any missing coverage and exemptions.
+- Use coverage reports to find untested behaviors. The repository has no numeric coverage gate. Home Assistant's quality-scale criteria apply separately if the project pursues that designation.
 
 ### Translation, security, and release quality gates
 
 - Keep UI-facing messages translatable and validate configuration and options strings. Regenerate/check `translations/en.json` after `strings.json` changes using a documented workflow appropriate for a custom integration; do not assume Home Assistant Core's translation scripts are installed in this repo.
 - Validate authentication and authorization of WebSocket calls, least privilege, no leaked tokens/task data, safe logging, offline/error behavior, local-first operation, compatibility with native `todo` capabilities, and backward-compatible persisted state.
-- Each code change must run or explicitly report as unverified: `ruff check .`, `ruff format --check .`, `python -m pytest -q`, `python -m pytest -q tests_ha`, Python compilation, frontend checks, and feature-specific tests. CI must independently execute the relevant checks. Review actual GitHub Actions job logs and resolve failures before calling a change complete.
+- Run `npm run test:all` for code changes and run the feature-specific checks selected below. CI runs the regular checks on push. Report any applicable check that could not be run, and verify GitHub Actions results before reporting that CI passed.
 - No tests may be skipped, assertions weakened, or checks removed merely to obtain a green CI run. A commit, workflow trigger, or green lint job does not prove integration tests pass. Never test against production Home Assistant without separate explicit authorization.
 - Each handoff must identify references consulted, spec/agent impact, tests and exact results, coverage when available, the actual CI run and outcome, risks, and any unverified behavior.
 
@@ -302,13 +302,6 @@ other todo entities
 - pytest: https://docs.pytest.org/
 - Ruff: https://docs.astral.sh/ruff/
 
-### CI baseline follow-up (2026-11-09)
-
-- Push and pull-request validation runs regular Python unit/contract tests in a dedicated `pytest-unit` job, separate from Home Assistant fixture tests. Manual `pytest` runs both suites. A skipped job in an older workflow did not mean the regular tests were absent: they previously ran inside `lint-and-contracts`.
-- CI also runs Ruff lint/format, frontend JavaScript syntax and DOM behavior tests, HA integration tests, coverage reporting, Hassfest, and HACS validation. A full-run secret scan uses Gitleaks; pull requests also run dependency review. `.pre-commit-config.yaml` supplies local Ruff, formatting, basic file validation and private-key checks.
-- **Verification pending:** The newly added security jobs and separate unit-test job must be confirmed in a new GitHub Actions run. Do not describe the updated pipeline as green until observed.
-- **Outstanding testing work:** Add genuine authenticated WebSocket permission/invalid-payload tests; broaden setup/reload/partial-failure and provider error/concurrency tests as features arrive; add frontend accessibility/keyboard and Android acceptance verification. Coverage has no enforced minimum yet; choose a meaningful threshold after reviewing baseline results. Translation validation currently checks JSON structure, not completeness. A passing CI run does not imply Bronze IQS readiness or feature completeness.
-
 ### Persistence, permissions, and state-change regression coverage
 
 - Home Assistant persists the configured list IDs in config-entry options. Native Local To-do persists tasks and their supported fields. The restart test reads both from the same configuration directory in a fresh Home Assistant instance.
@@ -317,7 +310,13 @@ other todo entities
 
 ### Behavior-first testing workflow
 
-- Prefer public config flows, authenticated WebSocket requests, native To-do actions, and observable panel output. When removing a test, preserve any distinct regression it protects through a stronger scenario.
-- Keep the disk-backed restart scenario and narrowly inject failures or delays where real services cannot produce them deterministically.
-- Run the Python suite once in push CI and publish coverage as a diagnostic report. Keep packaging validation, lint, frontend behavior tests, and secret scanning in push CI.
-- Run the disposable two-client browser smoke test on demand for changes to frontend task mutations or synchronization. Use synthetic data and an isolated Home Assistant configuration. See the README for local and CI entry points.
+Every new feature must add or extend an automated test that verifies its observable behavior. For each feature, review every layer below and choose where each distinct regression can be caught reliably. In the change summary, briefly record the layers used and why any other layer adds no distinct coverage. Features that cross layers may need more than one test, such as a real HA authorization test and a browser test for the error shown to the user.
+
+| Test layer | Use it to verify |
+| --- | --- |
+| Fast checks and focused unit tests | Packaging, translations, syntax, and isolated logic whose edge cases are easier to exercise directly. Keep Ruff, Hassfest, HACS validation, and secret scanning in push CI. |
+| Home Assistant integration tests | Behavior through public config flows, authenticated WebSocket commands, native To-do actions, entity state, and entry lifecycle. Use real Local To-do and temporary on-disk storage for persistence, reload, or restart behavior. |
+| Panel behavior tests | What users see and do in the panel, including keyboard entry, errors, focus, stale responses, and rapid actions. Control timing or inject a specific failure when that makes a scenario reproducible. |
+| Disposable HA instance and real browser | Workflows that depend on the installed integration, HA frontend, authentication, browser interaction, or synchronization between clients. Run the browser suite on demand for changes to these paths and extend it when a new feature introduces a distinct end-to-end risk. The existing smoke test follows a task from native To-do to HA Lists and its completion back to native To-do. Use synthetic data in the isolated instance. |
+
+Run the Python suite once in push CI and publish coverage as a diagnostic report. See the README for local and on-demand CI commands. Keep the tests that would catch a realistic regression, assert results at the public boundary, and consolidate duplicates once a stronger scenario covers their distinct behavior. Use narrow test doubles where real services cannot reliably reproduce a failure or race. Review brittle tests and slow checks for the behavior they protect before adding more mandatory steps. A test should help a maintainer diagnose a regression, whether the change was written by a person or an agent.
