@@ -9,7 +9,7 @@ import pytest
 from homeassistant import data_entry_flow, loader
 from homeassistant.config_entries import SOURCE_USER, ConfigEntryState
 from homeassistant.core import HomeAssistant
-from pytest_homeassistant_custom_component.common import async_test_home_assistant
+from pytest_homeassistant.common import async_test_home_assistant
 
 from custom_components.ha_lists.const import DOMAIN
 

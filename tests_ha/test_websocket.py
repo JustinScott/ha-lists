@@ -1,8 +1,11 @@
 """Test the HA Lists WebSocket response and command schema."""
 
+import pytest
 from homeassistant.auth.models import Group
 from homeassistant.components import websocket_api
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from homeassistant.core import HomeAssistant
+from pytest_homeassistant.common import MockConfigEntry
+from pytest_homeassistant.typing import WebSocketGenerator
 
 from custom_components.ha_lists.const import DOMAIN
 
@@ -87,13 +90,27 @@ async def test_discovery_uses_authenticated_users_entity_policy(
     }
 
 
-async def test_websocket_rejects_invalid_authentication(hass, hass_client_no_auth):
-    """The HA handshake rejects an invalid token before command dispatch."""
-    entry = MockConfigEntry(domain=DOMAIN, options={"lists": ["todo.private"]})
+@pytest.mark.parametrize(
+    "payload",
+    [
+        pytest.param({"lists": ["todo.private"]}, id="caller-supplied-lists"),
+        pytest.param({"entity_id": None}, id="null-entity"),
+        pytest.param({"extra": {"nested": [1]}}, id="nested-extra"),
+    ],
+)
+async def test_malformed_command_keeps_authenticated_connection_usable(
+    hass: HomeAssistant, hass_ws_client: WebSocketGenerator, payload: dict
+) -> None:
+    """Invalid arguments fail schema validation without breaking the next call."""
+    entry = MockConfigEntry(domain=DOMAIN)
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
-    client = await hass_client_no_auth()
-    async with client.ws_connect("/api/websocket") as socket:
-        assert (await socket.receive_json(timeout=5))["type"] == "auth_required"
-        await socket.send_json({"type": "auth", "access_token": "invalid-token"})
-        assert (await socket.receive_json(timeout=5))["type"] == "auth_invalid"
+    client = await hass_ws_client(hass)
+    await client.send_json({"id": 1, "type": "ha_lists/lists", **payload})
+    result = await client.receive_json(timeout=5)
+    assert result["success"] is False
+    assert result["error"]["code"] == websocket_api.ERR_INVALID_FORMAT
+    await client.send_json({"id": 2, "type": "ha_lists/lists"})
+    result = await client.receive_json(timeout=5)
+    assert result["success"]
+    assert result["result"] == {"lists": []}

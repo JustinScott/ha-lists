@@ -1,7 +1,9 @@
 """Exercise the panel lifecycle through Home Assistant's public interfaces."""
 
 from homeassistant.components import panel_custom
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from homeassistant.core import HomeAssistant
+from pytest_homeassistant.common import MockConfigEntry
+from pytest_homeassistant.typing import WebSocketGenerator
 
 from custom_components.ha_lists import ASSET_URL, PANEL_PATH
 from custom_components.ha_lists.const import DOMAIN
@@ -51,3 +53,25 @@ async def test_partial_setup_can_recover(hass, hass_ws_client, monkeypatch):
     assert PANEL_PATH not in await panel_paths(socket)
     assert await hass.config_entries.async_reload(entry.entry_id)
     assert PANEL_PATH in await panel_paths(socket)
+
+
+async def test_repeated_reload_and_unload_clear_discovery(
+    hass: HomeAssistant, hass_ws_client: WebSocketGenerator
+) -> None:
+    """Process-wide routes remain usable while unloaded entries expose no lists."""
+    entry = MockConfigEntry(domain=DOMAIN, options={"lists": ["todo.synthetic"]})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    client = await hass_ws_client(hass)
+    for _ in range(3):
+        assert await hass.config_entries.async_reload(entry.entry_id)
+        assert PANEL_PATH in await panel_paths(client)
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await client.send_json_auto_id({"type": "ha_lists/lists"})
+    result = await client.receive_json(timeout=5)
+    assert result["success"]
+    assert result["result"] == {"lists": []}
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await client.send_json_auto_id({"type": "ha_lists/lists"})
+    result = await client.receive_json(timeout=5)
+    assert result["result"] == {"lists": ["todo.synthetic"]}

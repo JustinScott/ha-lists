@@ -346,3 +346,42 @@ Every new feature must add or extend an automated test that verifies its observa
 | Disposable HA instance and real browser | Workflows that depend on the installed integration, HA frontend, authentication, browser interaction, or synchronization between clients. Run the browser suite on demand for changes to these paths and extend it when a new feature introduces a distinct end-to-end risk. The existing smoke test follows a task from native To-do to HA Lists and its completion back to native To-do. Use synthetic data in the isolated instance. |
 
 Run the Python suite once in push CI and publish coverage as a diagnostic report. See the README for local and on-demand CI commands. Keep the tests that would catch a realistic regression, assert results at the public boundary, and consolidate duplicates once a stronger scenario covers their distinct behavior. Use narrow test doubles where real services cannot reliably reproduce a failure or race. Review brittle tests and slow checks for the behavior they protect before adding more mandatory steps. A test should help a maintainer diagnose a regression, whether the change was written by a person or an agent.
+
+### Verified runtime and reliability baseline (2026-11-11)
+
+- Minimum supported Home Assistant is 2026.11.1, declared in `hacs.json` and
+  exercised by both Python and installed-HA browser tests. Python is 3.14.2+;
+  frontend 20261028.5 and Local To-do ical 14.3.1 match this HA release.
+- The official `pytest-homeassistant==2026.11.1` package replaces the retired
+  `pytest-homeassistant-custom-component` harness referenced in earlier sections.
+  Imports and fixture setup follow the official package's migration guide.
+  This supersedes older framework and Python 3.13 guidance above.
+- Setup and unload hooks use HA's current `None` return contract. Process-wide
+  static routes/WebSocket registration survive reloads; unloaded or failed
+  entries return no configured list IDs. Authentication, per-entity read/control
+  policy, invalid payload recovery, repeated reload and partial setup recovery
+  are tested through HA interfaces. This is not a claim of IQS certification.
+- CI runs installed-HA browser checks for pushes, pull requests, and manual
+  `all`/`browser` runs. Python coverage has an enforced 95% floor. Requirements
+  pin the matching official harness and runtime dependencies, with a committed
+  transitive Python lock; Node dependencies
+  use the lockfile. Update the minimum, harness, frontend, image and docs together.
+- `compose.dev.yaml` provides a loopback-only development instance and ignored
+  persistent state. Browser tests retain a disposable Docker default, with an
+  optional isolated native process for constrained environments. No existing
+  real HA instance or credentials are accepted by the test runner.
+- Expanded browser acceptance includes rapid entry/double-submit, list switching,
+  injected service rejection with draft preservation and recovery, and mobile
+  overflow/focus checks. Mobile emulation does not establish Android keyboard/IME
+  acceptance; test that manually on a companion app before a release.
+- Display Home Assistant's structured error message when available instead of
+  rendering an opaque JavaScript object. Preserve drafts after provider failures.
+
+- Authentication rejection runs against the installed HA server in the browser
+  suite and asserts both `auth_invalid` and closure. This retains the assertion
+  while avoiding a heartbeat-timer leak in the fixture-based aiohttp 3.14.5
+  rejected-auth teardown; no cleanup verification is disabled.
+
+- Local Windows development uses WSL2, with setup/check scripts and a guide in
+  `dev/`. Scripts install the committed Python/Node locks and invoke the same
+  checks as CI; generated environments, credentials and task data stay ignored.

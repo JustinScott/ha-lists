@@ -6,11 +6,14 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { chromium } from "playwright";
+import { startNative } from "./native-runtime.mjs";
 
 const docker = promisify(execFile);
 const image = "ghcr.io/home-assistant/home-assistant:2026.11.1";
 const listName = "Smoke test list";
 const entityId = "todo.smoke_test_list";
+const secondName = "Second smoke list";
+const secondId = "todo.second_smoke_list";
 
 async function post(base, path, data, token) {
   const response = await fetch(new URL(path, base), {
@@ -56,6 +59,7 @@ async function configureLists(base, username, password) {
   const flows = "/api/config/config_entries/flow";
   for (const [handler, fields] of [
     ["local_todo", { todo_list_name: listName }],
+    ["local_todo", { todo_list_name: secondName }],
     ["ha_lists", {}],
   ]) {
     const flow = await post(base, flows, { handler }, token);
@@ -72,24 +76,71 @@ async function configureLists(base, username, password) {
   assert.equal(entry.state, "loaded");
   const options = "/api/config/config_entries/options/flow";
   const flow = await post(base, options, { handler: entry.entry_id }, token);
-  const result = await post(base, `${options}/${flow.flow_id}`, { lists: [entityId] }, token);
+  const result = await post(base, `${options}/${flow.flow_id}`, { lists: [entityId, secondId] }, token);
   assert.equal(result.type, "create_entry");
   return token;
 }
 
-async function openPanel(browser, base, path, username, password, options) {
+// Run the rejection handshake against the installed server: the fixture-based
+// client currently leaves an aiohttp 3.14.5 heartbeat timer after auth rejection.
+async function verifyRejectedAuthentication(base) {
+  await new Promise((resolve, reject) => {
+    const url = new URL("/api/websocket", base);
+    url.protocol = "ws:";
+    const socket = new WebSocket(url);
+    let rejected = false;
+    const timer = setTimeout(() => { socket.close(); reject(new Error("Rejected authentication did not close")); }, 10000);
+    socket.onerror = () => { clearTimeout(timer); reject(new Error("Authentication test connection failed")); };
+    socket.onmessage = ({ data }) => {
+      const message = JSON.parse(data);
+      if (message.type === "auth_required") socket.send(JSON.stringify({ type: "auth", access_token: "synthetic-invalid-token" }));
+      else if (message.type === "auth_invalid") rejected = true;
+      else { clearTimeout(timer); socket.close(); reject(new Error("Unauthenticated connection received an unexpected response")); }
+    };
+    socket.onclose = () => {
+      clearTimeout(timer);
+      if (rejected) resolve();
+      else reject(new Error("Invalid token was not explicitly rejected"));
+    };
+  });
+}
+
+async function confirmNativeHTTP(base, token) {
+  await new Promise((resolve, reject) => {
+    const url = new URL("/api/websocket", base);
+    url.protocol = "ws:";
+    const socket = new WebSocket(url);
+    const timer = setTimeout(() => { socket.close(); reject(new Error("HTTP confirmation timed out")); }, 10000);
+    socket.onerror = () => { clearTimeout(timer); reject(new Error("HTTP confirmation connection failed")); };
+    socket.onmessage = ({ data }) => {
+      const message = JSON.parse(data);
+      if (message.type === "auth_required") socket.send(JSON.stringify({ type: "auth", access_token: token }));
+      else if (message.type === "auth_ok") socket.send(JSON.stringify({ id: 1, type: "http/config" }));
+      else if (message.type === "result") {
+        if (!message.success) { clearTimeout(timer); socket.close(); reject(new Error("HTTP confirmation rejected")); }
+        else if (message.id === 1 && message.result.pending) socket.send(JSON.stringify({ id: 2, type: "http/config/promote" }));
+        else { clearTimeout(timer); socket.close(); resolve(); }
+      }
+    };
+  });
+}
+
+async function openPanel(browser, base, path, username, password, options, beforeNavigate) {
   const page = await browser.newPage(options);
+  await beforeNavigate?.(page);
   await page.goto(new URL(path, base).href);
   await page.locator('input[name="username"]').fill(username);
   await page.locator('input[name="password"]').fill(password);
   await page.locator('input[name="password"]').press("Enter");
-  await page.waitForURL((url) => url.pathname === path);
+  await page.waitForURL((url) => url.pathname === new URL(path, base).pathname);
   return page;
 }
 
 test("native To-do and HA Lists share task changes across browser sessions", { timeout: 600_000 }, async () => {
   const name = "ha-lists-test-" + randomUUID();
   let browser;
+  let lists;
+  let nativeRuntime;
   let created = false;
   try {
     const onboarding = JSON.stringify({
@@ -99,32 +150,68 @@ test("native To-do and HA Lists share task changes across browser sessions", { t
       data: { done: ["core_config", "analytics", "integration"] },
     });
 
-    await docker("docker", [
-      "create", "--name", name, "--publish", "127.0.0.1::8123",
-      "--entrypoint", "/bin/sh", image, "-c",
-      'mkdir -p /config/.storage && printf "%s" "$1" > /config/configuration.yaml && ' +
-      'printf "%s" "$2" > /config/.storage/onboarding && exec /init',
-      "ha-lists", "frontend:\nconfig:\ntodo:\n", onboarding,
-    ], { timeout: 480_000 });
-    created = true;
     const components = fileURLToPath(new URL("../custom_components", import.meta.url));
-    await docker("docker", ["cp", components, `${name}:/config/`], { timeout: 30_000 });
-    await docker("docker", ["start", name]);
-    const { stdout } = await docker("docker", ["port", name, "8123/tcp"]);
-    const base = `http://${stdout.trim()}/`;
+    let base;
+    if (process.env.HA_TEST_PYTHON) {
+      nativeRuntime = await startNative(process.env.HA_TEST_PYTHON, components,
+        "frontend:\nconfig:\ntodo:\n", onboarding);
+      base = nativeRuntime.base;
+    } else {
+      await docker("docker", [
+        "create", "--name", name, "--publish", "127.0.0.1::8123",
+        "--entrypoint", "/bin/sh", image, "-c",
+        'mkdir -p /config/.storage && printf "%s" "$1" > /config/configuration.yaml && ' +
+        'printf "%s" "$2" > /config/.storage/onboarding && exec /init',
+        "ha-lists", "frontend:\nconfig:\ntodo:\n", onboarding,
+      ], { timeout: 480_000 });
+      created = true;
+      await docker("docker", ["cp", components, `${name}:/config/`], { timeout: 30_000 });
+      await docker("docker", ["start", name]);
+      const { stdout } = await docker("docker", ["port", name, "8123/tcp"]);
+      base = `http://${stdout.trim()}/`;
+    }
     await waitForHomeAssistant(base);
 
     const username = "smoke-test";
     const password = randomUUID();
     const token = await configureLists(base, username, password);
+    if (nativeRuntime) await confirmNativeHTTP(base, token);
+    await verifyRejectedAuthentication(base);
 
-    browser = await chromium.launch();
-    const lists = await openPanel(browser, base, "/ha-lists", username, password, {
+    browser = await chromium.launch({
+      ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH && {
+        executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
+      }),
+    });
+    let rejectAdd = true;
+    const failureDraft = "Rejected synthetic task";
+    lists = await openPanel(browser, base, "/ha-lists", username, password, {
       viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, timezoneId: "America/Chicago",
+    }, async (page) => {
+      await page.routeWebSocket("**/api/websocket", (socket) => {
+        const server = socket.connectToServer();
+        socket.onMessage((raw) => {
+          const message = JSON.parse(raw.toString());
+          if (rejectAdd && message.type === "call_service" &&
+              message.domain === "todo" && message.service === "add_item" &&
+              message.service_data?.item === failureDraft) {
+            rejectAdd = false;
+            socket.send(JSON.stringify({ id: message.id, type: "result", success: false,
+              error: { code: "service_validation_error", message: "Synthetic provider unavailable" } }));
+          } else {
+            server.send(raw);
+          }
+        });
+      });
     });
     await lists.getByRole("button", { name: listName }).waitFor();
     await lists.getByText("No tasks found.").waitFor();
     const quickAdd = lists.locator("ha-lists-panel ha-input input");
+    await lists.locator("ha-lists-panel ha-input").evaluate(async (input) => {
+      await input.updateComplete;
+      await customElements.whenDefined("wa-input");
+      await input.shadowRoot.querySelector("wa-input").updateComplete;
+    });
     await quickAdd.fill("First quick task");
     await quickAdd.press("Enter");
     await lists.getByRole("button", { name: "Rename First quick task" }).waitFor();
@@ -138,7 +225,37 @@ test("native To-do and HA Lists share task changes across browser sessions", { t
     assert.equal(await quickAdd.inputValue(), "");
     assert.ok(await quickAdd.evaluate((input) => input.matches(":focus")));
 
-    const native = await openPanel(browser, base, "/todo", username, password);
+    assert.ok(await lists.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+      "mobile page must not overflow horizontally");
+    assert.ok(await lists.locator("ha-lists-panel main").evaluate((main) => main.scrollWidth <= main.clientWidth),
+      "mobile panel must not overflow horizontally");
+    await quickAdd.fill("Rapid synthetic task");
+    await quickAdd.press("Enter");
+    await quickAdd.press("Enter");
+    await lists.getByRole("button", { name: "Rename Rapid synthetic task", exact: true }).waitFor();
+    const rapid = await post(base, "/api/services/todo/get_items?return_response", { entity_id: entityId }, token);
+    assert.equal(rapid.service_response[entityId].items.filter((task) => task.summary === "Rapid synthetic task").length, 1);
+
+    await quickAdd.fill(failureDraft);
+    await quickAdd.press("Enter");
+    await lists.getByRole("alert").filter({ hasText: "Synthetic provider unavailable" }).waitFor();
+    assert.equal(await quickAdd.inputValue(), failureDraft);
+    await lists.getByRole("button", { name: "Add", exact: true }).tap();
+    await lists.getByRole("button", { name: `Rename ${failureDraft}`, exact: true }).waitFor();
+    assert.equal(await quickAdd.inputValue(), "");
+
+    await lists.getByRole("button", { name: secondName, exact: true }).tap();
+    await lists.getByRole("heading", { name: secondName, exact: true }).waitFor();
+    await lists.getByText("No tasks found.", { exact: true }).waitFor();
+    await quickAdd.fill("Second list only");
+    await quickAdd.press("Enter");
+    await lists.getByRole("button", { name: "Rename Second list only", exact: true }).waitFor();
+    await lists.getByRole("button", { name: listName, exact: true }).tap();
+    await lists.getByRole("button", { name: "Rename First quick task", exact: true }).waitFor();
+    assert.equal(await lists.getByRole("button", { name: "Rename Second list only", exact: true }).count(), 0);
+    console.log("Verified mobile layout/focus, rapid entry, provider rejection/retry, and list switching");
+
+    const native = await openPanel(browser, base, `/todo?entity_id=${entityId}`, username, password);
     const item = "Shared browser task";
     const nativeCard = native.locator("hui-todo-list-card");
     const nativeInput = nativeCard.locator("ha-input input");
@@ -205,14 +322,17 @@ test("native To-do and HA Lists share task changes across browser sessions", { t
     assert.equal(await lists.getByRole("checkbox", { name: `Complete ${renamed}`, exact: true }).count(), 1);
     assert.equal(await nativeCard.getByText(renamed, { exact: true }).count(), 1);
   } catch (error) {
+    if (lists) process.stderr.write(await lists.locator("ha-lists-panel").ariaSnapshot().catch(() => "") + "\n");
     const logs = created && await docker("docker", ["logs", "--tail", "50", name],
       { timeout: 5_000 }).catch(() => null);
     if (logs) process.stderr.write(logs.stdout + logs.stderr);
+    if (nativeRuntime) process.stderr.write(nativeRuntime.logs());
     throw error;
   } finally {
     try {
       await browser?.close();
     } finally {
+      await nativeRuntime?.close();
       if (created) {
         await docker("docker", ["rm", "--force", "--volumes", name], { timeout: 30_000 });
       }

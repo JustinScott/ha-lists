@@ -60,7 +60,7 @@ class HaListsPanel extends HTMLElement {
       this.selectFirstAvailable();
     } catch (error) {
       if (connection !== this._connection) return;
-      this._error = "Could not load list configuration: " + String(error);
+      this._error = "Could not load list configuration: " + (error?.message || String(error));
       this._configured = [];
       this.render();
     }
@@ -102,7 +102,7 @@ class HaListsPanel extends HTMLElement {
       this._items = response.items || [];
     } catch (error) {
       if (requestId !== this._requestId) return;
-      this._error = "Unable to load tasks: " + String(error);
+      this._error = "Unable to load tasks: " + (error?.message || String(error));
     } finally {
       if (requestId === this._requestId) {
         this._loading = false;
@@ -134,7 +134,7 @@ class HaListsPanel extends HTMLElement {
         if (this._selected === entityId && this.isConnected) this._input.focus();
       }
     } catch (error) {
-      this._error = "Unable to add task: " + String(error);
+      this._error = "Unable to add task: " + (error?.message || String(error));
     } finally {
       this._adding = false;
       this.render();
@@ -162,7 +162,7 @@ class HaListsPanel extends HTMLElement {
     } catch (error) {
       item.status = previousStatus;
       if (this._selected === entityId) {
-        this._error = "Unable to update task: " + String(error);
+        this._error = "Unable to update task: " + (error?.message || String(error));
       }
     } finally {
       this._updatingItems.delete(key);
@@ -288,7 +288,7 @@ class HaListsPanel extends HTMLElement {
       if (this._edit === edit && this.isConnected) this.closeTaskEditor(edit.uid);
     } catch (error) {
       if (this._edit === edit) {
-        edit.error = "Unable to save task: " + String(error);
+        edit.error = "Unable to save task: " + (error?.message || String(error));
       }
     } finally {
       if (this._edit === edit) {
@@ -329,7 +329,7 @@ class HaListsPanel extends HTMLElement {
         if (this._edit === edit && this.isConnected) this.closeTaskEditor(edit.uid);
       }
     } catch (error) {
-      if (this._edit === edit) edit.error = "Unable to delete task: " + String(error);
+      if (this._edit === edit) edit.error = "Unable to delete task: " + (error?.message || String(error));
     } finally {
       this._updatingItems.delete(key);
       edit.saving = false;

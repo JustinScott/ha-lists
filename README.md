@@ -18,13 +18,20 @@ Use a development instance with synthetic lists and tasks.
 
 ## Development checks
 
-Use Python 3.13 and Node.js 22. On Windows, run the Python suite in WSL.
+For Windows/box1, see [the local development guide](dev/README.md). Setup and
+check commands are grouped under `dev/`; all test suites sync with the repository.
+
+Requires Home Assistant **2026.11.1 or newer**. The tested baseline is HA
+2026.11.1 with Python 3.14 and frontend 20261028.5. Earlier releases are not
+supported; the panel uses `ha-input`.
+
+Use Python 3.14.2 or newer and Node.js 22. On Windows, run the Python suite in WSL.
 From the repository root, set up the dependencies once:
 
 ```bash
-python3.13 -m venv .venv
+python3.14 -m venv .venv
 source .venv/bin/activate
-python -m pip install -r requirements-test.txt
+python -m pip install -r requirements-test.lock
 npm ci
 ```
 
@@ -42,8 +49,10 @@ loopback port, configures a synthetic Local To-do list, and checks that task
 changes appear across two browser sessions without a refresh. The test removes
 the container and temporary configuration at the end.
 
-In GitHub Actions, manually run **Validate** with the **browser** suite. The
-regular push workflow runs without a Home Assistant container.
+Browser checks run on pushes and pull requests as well as manual **Validate**
+runs with the **all** or **browser** suite. Python tests use the official
+`pytest-homeassistant` package matched to HA 2026.11.1; do not install it together
+with the retired custom-component test package. Coverage must stay at or above 95%.
 
 See [`specs.md`](specs.md) for requirements and [`AGENTS.md`](AGENTS.md)
 for coding instructions. Never commit credentials, personal tasks, local
@@ -68,3 +77,36 @@ Remove the HA Lists integration entry from Settings → Devices & services, then
 - **Not yet available:** Creating provider lists; due-date filters; rich metadata; autocomplete/history; Assist-specific routing; provider migration.
 
 The underlying `todo` integrations remain the source of truth for tasks. Removing HA Lists does not intentionally remove provider tasks. Provider capabilities vary; not every provider exposes completed items or rich task fields.
+
+## Repeatable development instance
+
+With Docker and Docker Compose installed, run `npm run dev` from the repository
+root. `compose.dev.yaml` pins HA 2026.11.1, mounts this integration read-only,
+and stores development state in the ignored `.dev-config/` directory. Open
+`http://localhost:8123`, finish onboarding, add a Local To-do list and HA Lists,
+then select the list under HA Lists → Configure. Use synthetic tasks only.
+Stop it with `docker compose -f compose.dev.yaml down`; state is retained.
+Port 8123 must be free. Back up `.dev-config/` before upgrading the pinned image.
+No privileged container or host networking is required.
+
+For a fresh Python test environment, `uv venv --python 3.14 .venv` and
+`uv pip install --python .venv/bin/python -r requirements-test.lock` are equivalent
+to the setup above. Use the checked-in `.python-version`, requirements file, and
+`requirements-test.lock` and `package-lock.json` rather than installing
+unpinned latest packages. Regenerate the Python lock after editing
+`requirements-test.txt` with `uv pip compile --python 3.14 requirements-test.txt
+-o requirements-test.lock`. Do not reuse a Python 3.13 virtual environment.
+
+When the HA Docker image cannot fit locally, browser tests also accept
+`HA_TEST_PYTHON=/absolute/path/to/python npm run test:browser`. That interpreter
+must run HA 2026.11.1 with frontend 20261028.5, Local To-do's `ical==14.3.1`,
+and the runtime libraries required by HA's service descriptions (conversation,
+Assist, TTS, camera and FFmpeg). Linux needs the TurboJPEG shared library.
+Use the full HA container in CI to include these native dependencies.
+`PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` optionally selects an installed Chromium.
+The native test always creates temporary storage and a random loopback port;
+it never accepts an existing HA URL or uses your development account.
+
+Mobile browser emulation checks touch interactions, focus, and horizontal
+layout. It does not verify a real Android companion app's keyboard or IME;
+that remains a manual acceptance check before a release.

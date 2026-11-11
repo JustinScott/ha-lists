@@ -514,3 +514,16 @@ test("datetime-only providers reject date-only edits and preserve a rejected dra
   assert.equal(time.value, "10:30");
   assert.equal(calls.length, 0);
 });
+
+test("structured Home Assistant errors show the message and preserve the draft", async () => {
+  const { window, panel } = await setup({
+    service: async () => { throw { code: "service_validation_error", message: "Synthetic provider unavailable" }; },
+  });
+  const input = panel.shadowRoot.querySelector("ha-input");
+  input.value = "Keep this draft";
+  input.dispatchEvent(new window.Event("input"));
+  panel.shadowRoot.querySelector("form").dispatchEvent(new window.Event("submit", { cancelable: true }));
+  await tick(); await tick();
+  assert.equal(input.value, "Keep this draft");
+  assert.match(panel.shadowRoot.textContent, /Unable to add task: Synthetic provider unavailable/);
+});

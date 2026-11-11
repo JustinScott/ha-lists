@@ -28,7 +28,11 @@ async def ws_lists(
 ) -> None:
     """Return configured list IDs for an authenticated frontend."""
     entries = hass.config_entries.async_entries(DOMAIN)
-    selected = entries[0].options.get(CONF_LISTS, []) if entries else []
+    selected = (
+        entries[0].options.get(CONF_LISTS, [])
+        if entries and hass.data.get(DOMAIN)
+        else []
+    )
     visible = [
         entity_id
         for entity_id in selected
@@ -37,10 +41,10 @@ async def ws_lists(
     connection.send_result(msg["id"], {"lists": visible})
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Register the sidebar and authenticated configuration endpoint."""
     if hass.data.get(DOMAIN):
-        return True
+        return
     if not hass.data.get(ASSETS_REGISTERED):
         await hass.http.async_register_static_paths(
             [
@@ -64,11 +68,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         require_admin=False,
     )
     hass.data[DOMAIN] = True
-    return True
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Remove the sidebar panel when the entry unloads."""
     if hass.data.pop(DOMAIN, None):
         async_remove_panel(hass, PANEL_PATH)
-    return True

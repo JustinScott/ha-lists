@@ -8,7 +8,7 @@ Use **current** documentation for the affected API or feature, not remembered or
 - [Home Assistant developer documentation](https://developers.home-assistant.io/): integration APIs, async lifecycle, config/options flows, WebSocket, `todo`, storage, frontend, architecture decisions, and quality-scale guidance.
 - [Home Assistant Core agent instructions](https://github.com/home-assistant/core/blob/dev/AGENTS.md) and [integration knowledge/AI skill](https://github.com/home-assistant/core/blob/dev/.claude/skills/ha-integration-knowledge/SKILL.md): apply relevant Home Assistant coding-agent guidance; confirm paths and instructions remain current.
 - [HACS documentation](https://www.hacs.xyz/docs/): current integration repository, structure, manifest, release, and validation requirements. **HACS distributes custom integrations; it does not make unsupported Home Assistant APIs supported.** Use supported HA extension points and HACS-compatible packaging, and distinguish Core-only processes from custom-integration requirements.
-- [Custom component pytest framework](https://pypi.org/project/pytest-homeassistant-custom-component/): follow its current fixtures, async test configuration, and mock-entry conventions for integration tests.
+- [Official Home Assistant pytest framework](https://github.com/home-assistant/core/tree/dev/packages/pytest-homeassistant): follow its current fixtures, async test configuration, and mock-entry conventions for integration tests.
 
 When guidance conflicts with a project decision, explain the conflict and seek approval before changing scope. Do not copy large documents into this file.
 

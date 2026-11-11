@@ -3,9 +3,10 @@
   "private": true,
   "scripts": {
     "test": "node --test tests_behavior/panel.test.mjs",
-    "test:python": "python -m pytest -q --cov=custom_components.ha_lists --cov-report=term-missing --cov-report=xml",
+    "test:python": "python -m pytest -q --cov=custom_components.ha_lists --cov-report=term-missing --cov-report=xml --cov-fail-under=95",
     "test:all": "ruff check . && ruff format --check . && python -m compileall -q custom_components && node --check custom_components/ha_lists/frontend/panel.js && npm run test:python && npm test",
-    "test:browser": "node --test tests_browser/sync.test.mjs"
+    "test:browser": "node --test tests_browser/sync.test.mjs",
+    "dev": "docker compose -f compose.dev.yaml up"
   },
   "devDependencies": {
     "jsdom": "26.1.0",

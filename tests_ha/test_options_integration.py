@@ -1,7 +1,7 @@
 """Test configuration changes through HA options and authenticated WebSocket."""
 
 from homeassistant import data_entry_flow
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant.common import MockConfigEntry
 
 from custom_components.ha_lists.const import DOMAIN
 

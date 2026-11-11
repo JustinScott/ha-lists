@@ -1,0 +1,6 @@
+homeassistant:
+  name: HA Lists Development
+  time_zone: America/Chicago
+frontend:
+config:
+todo:
