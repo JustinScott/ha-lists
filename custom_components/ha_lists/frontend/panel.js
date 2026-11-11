@@ -1,6 +1,8 @@
 // Home Assistant TodoListEntityFeature
 const DELETE_TODO_ITEM = 2;
 const UPDATE_TODO_ITEM = 4;
+const SET_DUE_DATE_ON_ITEM = 16;
+const SET_DESCRIPTION_ON_ITEM = 64;
 
 /** Lists panel: selected provider discovery and task retrieval and native todo item creation. */
 class HaListsPanel extends HTMLElement {
@@ -174,9 +176,16 @@ class HaListsPanel extends HTMLElement {
 
   openTaskEditor(item) {
     this._edit = {
-      uid: item.uid, title: item.summary || "", saving: false, confirmingDelete: false, error: "",
+      uid: item.uid,
+      title: item.summary || "",
+      description: item.description || "",
+      due: item.due || "",
+      timedDue: Boolean(item.due && !/^\d{4}-\d{2}-\d{2}$/.test(item.due)),
+      saving: false, confirmingDelete: false, error: "",
     };
     this._titleInput.value = this._edit.title;
+    this._descriptionInput.value = this._edit.description;
+    this._dueInput.value = this._edit.timedDue ? "" : this._edit.due;
     this.render();
     if (this._titleInput.hidden) {
       this._deleteTask.focus();
@@ -194,13 +203,23 @@ class HaListsPanel extends HTMLElement {
     (button || this._input).focus();
   }
 
-  async saveTitle() {
+  async saveTask() {
     const edit = this._edit;
     const entityId = this._selected;
     const title = this._titleInput.value.trim();
     const entity = this.availableLists.find((candidate) => candidate.entity_id === entityId);
     if (!edit || edit.saving || edit.confirmingDelete || !title || !this.supportsTaskAction(entity, UPDATE_TODO_ITEM)) return;
-    if (title === edit.title) {
+    const changes = {};
+    if (title !== edit.title) changes.rename = title;
+    if (this.supportsTaskAction(entity, SET_DESCRIPTION_ON_ITEM)
+        && this._descriptionInput.value !== edit.description) {
+      changes.description = this._descriptionInput.value || null;
+    }
+    if (!edit.timedDue && this.supportsTaskAction(entity, SET_DUE_DATE_ON_ITEM)
+        && this._dueInput.value !== edit.due) {
+      changes.due_date = this._dueInput.value || null;
+    }
+    if (!Object.keys(changes).length) {
       this.closeTaskEditor(edit.uid);
       return;
     }
@@ -214,20 +233,22 @@ class HaListsPanel extends HTMLElement {
       });
       if (this._edit !== edit || !this.isConnected) return;
       const current = items?.find((item) => item.uid === edit.uid);
-      if (!current || (current.summary || "") !== edit.title) {
+      if (!current
+          || ("rename" in changes && (current.summary || "") !== edit.title)
+          || ("description" in changes && (current.description || "") !== edit.description)
+          || ("due_date" in changes && (current.due || "") !== edit.due)) {
         await this.loadItems();
-        throw new Error("This task changed elsewhere. Cancel and reopen it to edit the latest title.");
+        throw new Error("This task changed elsewhere. Cancel and reopen it to edit the latest version.");
       }
       await this._hass.callService("todo", "update_item", {
-        entity_id: entityId, item: edit.uid, rename: title,
+        entity_id: entityId, item: edit.uid, ...changes,
       });
       if (this._edit !== edit || !this.isConnected) return;
       await this.loadItems();
       if (this._edit === edit && this.isConnected) this.closeTaskEditor(edit.uid);
     } catch (error) {
       if (this._edit === edit) {
-        edit.error = "Unable to rename task: " + String(error);
-        this._titleInput.focus();
+        edit.error = "Unable to save task: " + String(error);
       }
     } finally {
       if (this._edit === edit) {
@@ -299,7 +320,10 @@ class HaListsPanel extends HTMLElement {
         form[hidden], [hidden] { display:none; }
         .edit-form { align-items:center; flex-wrap:wrap; }
         .task-title { border:0; background:transparent; color:inherit; font:inherit; padding:6px 0; text-align:left; cursor:pointer; overflow-wrap:anywhere; }
-        .title-input { font:inherit; padding:8px; }
+        .title-input, .edit-field input, .edit-field textarea { font:inherit; padding:8px; }
+        .edit-field { display:grid; gap:4px; flex-basis:100%; }
+        .edit-field textarea { resize:vertical; min-height:4em; }
+        .timed-deadline { flex-basis:100%; }
         .delete-confirmation { flex-basis:100%; }
         .delete-action { color:var(--error-color); }
         form button { padding:10px 14px; font:inherit; cursor:pointer; }
@@ -370,6 +394,17 @@ class HaListsPanel extends HTMLElement {
       this._titleInput.required = true;
       this._titleInput.maxLength = 255;
       this._titleInput.addEventListener("input", () => this.renderEditor());
+      this._descriptionField = document.createElement("label");
+      this._descriptionField.className = "edit-field";
+      this._descriptionInput = document.createElement("textarea");
+      this._descriptionField.append("Description", this._descriptionInput);
+      this._dueField = document.createElement("label");
+      this._dueField.className = "edit-field";
+      this._dueInput = document.createElement("input");
+      this._dueInput.type = "date";
+      this._dueField.append("Due date", this._dueInput);
+      this._timedDeadline = document.createElement("p");
+      this._timedDeadline.className = "timed-deadline";
       this._saveTitle = document.createElement("button");
       this._saveTitle.type = "submit";
       this._saveTitle.textContent = "Save";
@@ -395,7 +430,7 @@ class HaListsPanel extends HTMLElement {
       this._confirmDelete.addEventListener("click", () => this.deleteItem());
       this._editForm.addEventListener("submit", (event) => {
         event.preventDefault();
-        this.saveTitle();
+        this.saveTask();
       });
       this._editForm.addEventListener("keydown", (event) => {
         if (event.key === "Escape" && this._edit && !this._edit.saving) {
@@ -405,7 +440,8 @@ class HaListsPanel extends HTMLElement {
         }
       });
       this._editForm.append(
-        this._titleLabel, this._titleInput, this._saveTitle, this._cancelTitle, this._deleteTask,
+        this._titleLabel, this._titleInput, this._descriptionField, this._dueField,
+        this._timedDeadline, this._saveTitle, this._cancelTitle, this._deleteTask,
         this._deletePrompt, this._cancelDelete, this._confirmDelete,
       );
       this._editError = document.createElement("p");
@@ -519,6 +555,13 @@ class HaListsPanel extends HTMLElement {
     const canDelete = this.supportsTaskAction(selected, DELETE_TODO_ITEM);
     this._editForm.hidden = !edit;
     this._titleLabel.hidden = this._titleInput.hidden = this._saveTitle.hidden = confirming || !canRename;
+    const showDetails = Boolean(edit && canRename && !confirming);
+    this._descriptionField.hidden = !showDetails || !this.supportsTaskAction(selected, SET_DESCRIPTION_ON_ITEM);
+    this._dueField.hidden = !showDetails || edit?.timedDue || !this.supportsTaskAction(selected, SET_DUE_DATE_ON_ITEM);
+    this._timedDeadline.hidden = !showDetails || !edit?.timedDue;
+    this._timedDeadline.textContent = edit?.timedDue
+      ? "Due date and time: " + new Date(edit.due).toLocaleString() : "";
+    this._descriptionInput.readOnly = this._dueInput.readOnly = Boolean(edit?.saving);
     this._cancelTitle.hidden = confirming;
     this._deleteTask.hidden = confirming || !canDelete;
     this._deleteTask.disabled = Boolean(edit?.saving);

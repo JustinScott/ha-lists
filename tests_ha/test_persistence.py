@@ -81,7 +81,13 @@ async def test_selected_list_and_tasks_survive_home_assistant_restart(
         await first.services.async_call(
             "todo",
             "update_item",
-            {"entity_id": LIST_ID, "item": created["uid"], "rename": "Green apples"},
+            {
+                "entity_id": LIST_ID,
+                "item": created["uid"],
+                "rename": "Green apples",
+                "description": "Updated shopping note",
+                "due_date": "2030-04-06",
+            },
             blocking=True,
         )
         await first.services.async_call(
@@ -111,8 +117,8 @@ async def test_selected_list_and_tasks_survive_home_assistant_restart(
         [restored] = await get_tasks(restarted)
         assert restored["uid"] == created["uid"]
         assert restored["summary"] == "Green apples"
-        assert restored["description"] == "Two green apples"
-        assert restored["due"] == "2030-04-05"
+        assert restored["description"] == "Updated shopping note"
+        assert restored["due"] == "2030-04-06"
         assert restored["status"] == "completed"
         assert restarted.states.get(LIST_ID).state == "0"
 

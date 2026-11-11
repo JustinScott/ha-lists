@@ -212,6 +212,13 @@ other todo entities
 - Regression-test keyboard focus, consecutive additions, and submission in the Android companion app where feasible. The browser-only pass does not establish Android-app compatibility.
 - Track implementation in [GitHub issue #1](https://github.com/JustinScott/ha-lists/issues/1). This is a **Milestone 2 core task-entry requirement**, to complete before expanding to task completion/editing. The issue is not itself evidence that the behavior is implemented.
 
+### Milestone 3 — native descriptions and due dates
+
+- Edit descriptions and date-only deadlines for tasks whose providers support those fields. Save only changed fields through the native To-do update action. Clearing an editable field sends a null value.
+- Display an existing timed deadline in the editor and preserve it when saving other fields. Timed deadline editing and Overdue and Due today filters are follow-ups.
+- Preserve the draft on save failure. Check changed fields against the latest provider values before writing, so a detected concurrent change to the same field is not overwritten.
+- Verify capability handling, field clearing and conflict behavior in the panel suite, updated values after a Local To-do restart, and updates in the open native To-do browser session.
+
 ### Backlog — per-user list write permissions
 
 - Define list ownership and enforce owner-or-administrator task writes on the server. Native Home Assistant To-do lists currently follow Home Assistant entity permissions, including access granted to ordinary local users.

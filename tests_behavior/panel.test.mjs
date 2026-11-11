@@ -50,6 +50,8 @@ async function setup({ lists = ["todo.groceries"], items = [], service, readItem
         const item = items.find((candidate) => (candidate.uid || candidate.summary) === data.item);
         if (item && data.status) item.status = data.status;
         if (item && data.rename) item.summary = data.rename;
+        if (item && "description" in data) item.description = data.description;
+        if (item && "due_date" in data) item.due = data.due_date;
       }
     },
   };
@@ -389,4 +391,64 @@ test("delete-only providers can open the editor and providers without delete hid
   deleteOnly.panel.shadowRoot.querySelector('[aria-label="Open task Apples"]').click();
   assert.ok(deleteButton(deleteOnly.panel, "Delete"));
   assert.equal(deleteOnly.panel.shadowRoot.querySelector(".title-input").hidden, true);
+});
+
+test("description and date-only edits send only changed fields, including explicit clears", async () => {
+  const { panel, calls } = await setup({ supportedFeatures: 4 | 16 | 64, items: [
+    { uid: "one", summary: "Apples", description: "Old note", due: "2030-04-05" },
+  ] });
+  const title = openRename(panel, "Apples");
+  const description = title.form.querySelector("textarea");
+  const due = title.form.querySelector('input[type="date"]');
+  assert.equal(description.value, "Old note");
+  assert.equal(due.value, "2030-04-05");
+  description.value = "New note";
+  due.value = "2030-04-06";
+  title.form.requestSubmit();
+  await tick();
+  assert.deepEqual(JSON.parse(JSON.stringify(calls[0].data)), {
+    entity_id: "todo.groceries", item: "one", description: "New note", due_date: "2030-04-06",
+  });
+
+  openRename(panel, "Apples");
+  description.value = "";
+  due.value = "";
+  title.form.requestSubmit();
+  await tick();
+  assert.deepEqual(JSON.parse(JSON.stringify(calls[1].data)), {
+    entity_id: "todo.groceries", item: "one", description: null, due_date: null,
+  });
+});
+
+test("only supported fields appear and saving a title preserves timed deadlines", async () => {
+  const renameOnly = await setup({ items: [{ uid: "one", summary: "Apples" }] });
+  const title = openRename(renameOnly.panel, "Apples");
+  assert.equal(title.form.querySelector("textarea").parentElement.hidden, true);
+  assert.equal(title.form.querySelector('input[type="date"]').parentElement.hidden, true);
+
+  const { panel, window, calls } = await setup({ supportedFeatures: 4 | 16 | 32 | 64, items: [
+    { uid: "one", summary: "Apples", description: "Keep note", due: "2030-04-05T12:30:00+00:00" },
+  ] });
+  const input = openRename(panel, "Apples");
+  assert.equal(input.form.querySelector('input[type="date"]').parentElement.hidden, true);
+  assert.match(input.form.querySelector(".timed-deadline").textContent, /Due date and time/);
+  saveTitle(window, input, "Green apples");
+  await tick();
+  assert.deepEqual(JSON.parse(JSON.stringify(calls[0].data)), {
+    entity_id: "todo.groceries", item: "one", rename: "Green apples",
+  });
+});
+
+test("an external description change blocks overwriting that field and preserves the draft", async () => {
+  const items = [{ uid: "one", summary: "Apples", description: "Old note" }];
+  const { panel, calls } = await setup({ items, supportedFeatures: 4 | 64 });
+  const title = openRename(panel, "Apples");
+  const description = title.form.querySelector("textarea");
+  description.value = "Draft note";
+  items[0].description = "Newer note";
+  title.form.requestSubmit();
+  await tick();
+  assert.equal(description.value, "Draft note");
+  assert.match(panel.shadowRoot.querySelector('[role="alert"]').textContent, /changed elsewhere/);
+  assert.equal(calls.length, 0);
 });
