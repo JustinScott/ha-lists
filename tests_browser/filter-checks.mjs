@@ -20,22 +20,26 @@ export async function verifyTaskFilters({ browser, page, base, token, username, 
   await post(base, "/api/services/todo/update_item", { entity_id: entityId, item: completed.uid, status: "completed" }, token);
   await page.getByRole("checkbox", { name: "Reopen Filter completed", exact: true }).waitFor();
 
-  const visible = async (target) => (await target.locator("ha-lists-panel li .task-title").allTextContents())
-    .filter((title) => title.startsWith("Filter ")).sort();
   const choose = async (target, filter, expected) => {
     await target.getByRole("combobox", { name: "Show tasks", exact: true }).selectOption(filter);
     const panel = await target.locator("ha-lists-panel").elementHandle();
     try {
-      await target.waitForFunction(({ panel, expected }) => {
+      const snapshot = await target.waitForFunction(({ panel, expected }) => {
         if (panel.shadowRoot.querySelector('[role="status"]').textContent === "Loading tasks…") return false;
         const titles = [...panel.shadowRoot.querySelectorAll("li .task-title")]
           .map((element) => element.textContent).filter((title) => title.startsWith("Filter ")).sort();
-        return JSON.stringify(titles) === JSON.stringify(expected);
+        return JSON.stringify(titles) === JSON.stringify(expected) ? titles : false;
       }, { panel, expected: [...expected].sort() });
+      try {
+        // Assert the snapshot that satisfied the wait: a provider refresh may
+        // replace the rows with a loading state before another DOM read.
+        assert.deepEqual(await snapshot.jsonValue(), [...expected].sort());
+      } finally {
+        await snapshot.dispose();
+      }
     } finally {
       await panel.dispose();
     }
-    assert.deepEqual(await visible(target), [...expected].sort());
   };
   await choose(page, "all", examples.map((task) => task.item));
   await choose(page, "active", examples.filter((task) => task.item !== "Filter completed").map((task) => task.item));
