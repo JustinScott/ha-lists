@@ -57,6 +57,67 @@ Build a free, local-first, application-style list manager integrated into Home A
 - Provide controls to remove individual suggestions, clear history, disable learning, and rebuild from available provider history.
 - Do not treat a provider's completed items as a guaranteed complete purchase history. Avoid double-counting on polling/restarts.
 
+#### Approved first autocomplete implementation (2026-11-12)
+
+- Scope learning to connected native Local To-do lists. Existing third-party
+  bindings retain task behavior but gain no new history/import/export workflow.
+  No cloud, AI, Recorder-history dependency or browser-local catalog is required.
+- Seed currently available completed items on the first successful snapshot.
+  Baseline existing active UIDs without learning their titles. Subsequently learn
+  first-observed UIDs from native snapshots, including native UI, Assist and
+  automation additions while the panel is closed. Reopening or renaming an
+  already-observed UID does not increase frequency. Rebuild reflects the current
+  completed titles. Missing/deleted history and tasks created/deleted between
+  observations cannot be reconstructed; this is not a purchase/audit history.
+- Use HA-managed Store schema 1, keyed by the native Local To-do config-entry
+  identity (independent of entity ID/name/registry recreation). Store normalized
+  and display labels, first-observed occurrence counts, last-observed timestamp,
+  source, learning/exclusion settings and a UID deduplication ledger. Preserve
+  data across restart, reload and hiding; remove orphaned history on subsequent
+  reconciliation/startup after native list deletion. Removing HA Lists deletes
+  its own catalog, leaving native lists/tasks intact.
+- Observe only selected entities through public filtered state-change and
+  state-report helpers; coalesce reports and read native `todo.get_items` after
+  updates and on attachment. Include same-count reports. Do not access private
+  entity-component internals, poll providers or rely on UI/service-call-only
+  learning. Detach listeners and entry-owned background work on unload.
+- Normalize Unicode NFKC, case and repeated whitespace. Rank exact matches,
+  then prefixes, then substrings; within each group use frequency, recency and
+  normalized alphabetical ties. Show at most five labels. Typing queries read
+  cached history only, never native tasks. Cap each catalog at 2,000 labels
+  (evict least-recent labels) and 50,000 observed UIDs; at the UID cap pause
+  further learning and report capacity, preserving existing suggestions.
+- Suggestions appear directly below the existing quick-entry field after
+  nonempty typing, debounced 150 ms. Nothing is initially highlighted. Arrow
+  Down/Up selects an option; Enter on a selected option or tapping it adds a
+  **new** native task with only that title. With no selection Enter/Add uses the
+  literal draft. Escape dismisses without clearing the draft. Avoid IME/repeat
+  submissions, double adds, stale responses after typing/list/connection changes,
+  and popup blur stealing a tap or keyboard. Use labelled combobox/listbox
+  semantics on the actual native input, element references across HA shadow
+  roots, live announcements and stable input focus. Free-text entry remains
+  available on suggestion failure; task-write failures retain the chosen draft.
+- Exclude already-active normalized labels by default. Keep catalog/settings
+  separate per list; cross-list sharing and fuzzy matching are future options.
+  Native task permissions still govern all additions. Query/history endpoints
+  require authentication, current selection and native list read permission.
+  Administrative history queries and mutations require an administrator.
+- Under View options provide searchable learned labels (20 results maximum),
+  individual Forget, learning/exclude-active toggles, and confirmed Clear history
+  and Rebuild from available completed items. These affect shared history only,
+  never native tasks. Clearing/forgetting retains seen UIDs so unchanged old
+  snapshots cannot immediately repopulate labels; a new task UID may relearn a
+  forgotten label. Disabling learning retains history but learns no new labels;
+  still baseline observed UIDs so re-enabling does not backfill that interval.
+  Explicit rebuild replaces history/rankings from available completed items.
+- Test ranking, bounded responses, safe rendering, debounce, focus, IME,
+  stale-response/selection races and failure recovery at the panel layer. Use
+  real HA for completed seeding, native/Assist/background observation, UID
+  deduplication, read/admin permissions, controls, same-count changes, lifecycle,
+  list identity and disk restart. Installed-HA Playwright verifies keyboard/touch,
+  active exclusions, new native identities, closed-panel/cross-session learning,
+  safe controls and desktop/mobile layout. No production HA or accounts are used.
+
 ## 3. Provider-independent architecture
 
 ```text

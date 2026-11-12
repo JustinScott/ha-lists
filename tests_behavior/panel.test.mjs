@@ -11,7 +11,7 @@ const deferred = () => {
   return { promise, resolve, reject };
 };
 
-async function setup({ lists = ["todo.groceries"], items = [], service, readItems, subscribeItems, subscribeConfiguration, management = null, manageLists, supportedFeatures = 6, clock } = {}) {
+async function setup({ lists = ["todo.groceries"], items = [], service, readItems, subscribeItems, subscribeConfiguration, management = null, manageLists, suggestions, manageSuggestions, supportedFeatures = 6, clock } = {}) {
   const dom = new JSDOM("<!doctype html><html><body></body></html>", {
     runScripts: "outside-only", pretendToBeVisual: true,
   });
@@ -42,6 +42,8 @@ async function setup({ lists = ["todo.groceries"], items = [], service, readItem
       },
       async sendMessagePromise(request) {
         requests.push(request);
+        if (request.type === "ha_lists/suggestions") return suggestions ? suggestions(request) : { suggestions: [], learning: true, exclude_active: true, count: 0 };
+        if (request.type === "ha_lists/suggestions/manage") return manageSuggestions?.(request) || {};
         if (request.type === "ha_lists/state") return { lists: [...lists], management };
         if (request.type.startsWith("ha_lists/list/") && manageLists) return manageLists(request);
         if (request.type === "todo/item/list") {
@@ -134,6 +136,116 @@ function change(window, checkbox, checked) {
   checkbox.checked = checked;
   checkbox.dispatchEvent(new window.Event("change", { bubbles: true }));
 }
+
+const suggestionTick = () => new Promise((resolve) => setTimeout(resolve, 180));
+function draft(window, panel, value) {
+  panel._input.value = value;
+  panel._input.dispatchEvent(new window.Event("input", { bubbles: true }));
+}
+function entryKey(window, panel, key, extra = {}) {
+  panel._input.dispatchEvent(new window.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...extra }));
+}
+
+test("autocomplete debounces, safely renders labels, and adds only an explicitly highlighted suggestion", async () => {
+  const { panel, window, calls, requests } = await setup({ suggestions: () => ({ suggestions: ["Milk", "<img src=x>"] }) });
+  panel._input.tabIndex = 0;
+  panel._input.focus();
+  draft(window, panel, "m");
+  draft(window, panel, "mi");
+  await suggestionTick();
+  assert.equal(requests.filter((request) => request.type === "ha_lists/suggestions").length, 1);
+  assert.equal(panel._suggestionList.hidden, false);
+  assert.equal(panel._suggestionList.querySelector("img"), null);
+  assert.equal(panel._suggestionIndex, -1);
+  entryKey(window, panel, "ArrowDown");
+  assert.equal(panel._suggestionIndex, 0);
+  assert.equal(panel._input.getAttribute("aria-expanded"), "true");
+  entryKey(window, panel, "Enter");
+  entryKey(window, panel, "Enter", { repeat: true });
+  await tick(); await tick();
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].data.item, "Milk");
+  assert.equal(panel._input.value, "");
+  assert.equal(panel.shadowRoot.activeElement, panel._input);
+  assert.equal(panel._suggestionList.hidden, true);
+  window.close();
+});
+
+test("autocomplete preserves free text and Escape/IME do not add unintended tasks", async () => {
+  const { panel, window, calls } = await setup({ suggestions: () => ({ suggestions: ["Milk", "Milkshake"] }) });
+  draft(window, panel, "mi");
+  await suggestionTick();
+  entryKey(window, panel, "ArrowUp");
+  assert.equal(panel._suggestionIndex, 1);
+  entryKey(window, panel, "Enter", { isComposing: true });
+  assert.equal(calls.length, 0);
+  entryKey(window, panel, "Escape");
+  assert.equal(panel._input.value, "mi");
+  assert.equal(panel._suggestionList.hidden, true);
+  entryKey(window, panel, "Enter");
+  await tick(); await tick();
+  assert.equal(calls[0].data.item, "mi");
+  window.close();
+});
+
+test("late autocomplete replies are ignored after more typing, list changes, blur and disconnect", async () => {
+  const pending = deferred();
+  const { panel, window } = await setup({ lists: ["todo.groceries", "todo.other"], suggestions: () => pending.promise });
+  draft(window, panel, "mi");
+  await suggestionTick();
+  draft(window, panel, "bread");
+  pending.resolve({ suggestions: ["Milk"] });
+  await tick();
+  assert.equal(panel._suggestionList.hidden, true);
+  panel.shadowRoot.querySelectorAll("nav button")[1].click();
+  await tick(); await tick();
+  assert.equal(panel._suggestionList.hidden, true);
+  draft(window, panel, "mi");
+  panel._input.dispatchEvent(new window.Event("focusout"));
+  await suggestionTick();
+  assert.equal(panel._suggestionList.hidden, true);
+  panel.remove();
+  assert.equal(panel._suggestions.length, 0);
+  window.close();
+});
+
+test("suggestion failures preserve task entry and selected-task failures keep the chosen draft", async () => {
+  const { panel, window, calls } = await setup({ suggestions: () => { throw Error("Unavailable"); }, service: async () => { throw Error("Retry sample"); } });
+  draft(window, panel, "mi");
+  await suggestionTick();
+  assert.equal(panel._input.value, "mi");
+  assert.equal(panel._error, "");
+  panel._suggestions = ["Milk"];
+  panel.renderSuggestions();
+  panel._suggestionList.firstChild.click();
+  await tick();
+  assert.equal(calls.length, 1);
+  assert.equal(panel._input.value, "Milk");
+  assert.match(panel._error, /Retry sample/);
+  window.close();
+});
+
+test("shared history controls confirm clear, preserve native tasks and report management failures", async () => {
+  const managed = [];
+  const { panel, window, calls } = await setup({ management: { available: [], deletable: {}, pending: [] },
+    suggestions: () => ({ suggestions: ["Milk"], learning: true, exclude_active: true, count: 1 }),
+    manageSuggestions: (request) => { managed.push(request); if (request.action === "forget") throw Error("Synthetic history failure"); return {}; },
+  });
+  panel._viewToggle.click();
+  await tick();
+  assert.equal(panel._historyPanel.hidden, false);
+  [...panel._historyPanel.querySelectorAll("button")].find((button) => button.textContent === "Clear learned history").click();
+  assert.equal(managed.length, 0);
+  assert.equal(panel._historyConfirm.hidden, false);
+  [...panel._historyConfirm.querySelectorAll("button")].find((button) => button.textContent === "Confirm history change").click();
+  await tick(); await tick();
+  assert.equal(managed[0].action, "clear");
+  assert.equal(calls.length, 0);
+  panel._historyResults.querySelector("button").click();
+  await tick(); await tick();
+  assert.match(panel._historyError.textContent, /Synthetic history failure/);
+  window.close();
+});
 
 for (const [down, up] of [["pointerdown", "pointerup"], ["mousedown", "mouseup"]]) {
   test(`empty-search blur waits for ${down} and cleans up pending collapse`, async () => {
@@ -1117,7 +1229,7 @@ test("filtered empty state, completion and rollback keep task data intact", asyn
   selectFilter(window, panel, "completed");
   assert.match(panel._results.textContent, /No tasks match this filter/);
   selectFilter(window, panel, "active");
-  change(window, panel.shadowRoot.querySelector('input[type="checkbox"]'), true);
+  change(window, panel.shadowRoot.querySelector('li input[type="checkbox"]'), true);
   await tick(); await tick();
   assert.deepEqual(visibleTitles(panel), ["Milk"]);
   assert.match(panel._results.textContent, /Synthetic denied write/);

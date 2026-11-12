@@ -81,10 +81,43 @@ connect it, or explicitly confirm deletion of the pending list.
 
 ## Supported features and current limitations
 
-- **Available:** One local HA Lists config entry; administrator creation, connection, hiding and confirmed deletion of native Local To-do lists; named-list sidebar; task retrieval, creation, renaming, completion, reopening, and deletion; task title/description search; All/Active/Completed/Due today/Overdue filters; newest/oldest active-task sorting; loading and error messages.
-- **Not yet available:** Creating/deleting third-party lists; rich metadata; autocomplete/history; Assist-specific routing; provider migration or import/export. Third-party import/export versus live editing remains a future design discussion; existing bindings and data are preserved.
+- **Available:** One local HA Lists config entry; administrator creation, connection, hiding and confirmed deletion of native Local To-do lists; named-list sidebar; task retrieval, creation, renaming, completion, reopening, and deletion; local per-list autocomplete/history for Local To-do; task title/description search; All/Active/Completed/Due today/Overdue filters; newest/oldest active-task sorting; loading and error messages.
+- **Not yet available:** Creating/deleting third-party lists; rich metadata; cross-list suggestion sharing or fuzzy matching; Assist-specific routing; provider migration or import/export. Third-party import/export versus live editing remains a future design discussion; existing bindings and data are preserved.
 
 The underlying `todo` integrations remain the source of truth for tasks. Removing HA Lists does not intentionally remove provider tasks. Provider capabilities vary; not every provider exposes completed items or rich task fields.
+
+## Task suggestions (Local To-do)
+
+Type in **Add a task** to see up to five suggestions below the field. Tap one,
+or use arrow keys and Enter, to add a new task with that title. With nothing
+highlighted, Enter adds your exact text. Escape dismisses suggestions and keeps
+your draft. Suggestion failures do not block ordinary entry. The selected title
+stays in the field if a task write fails; successful additions retain focus.
+
+History is stored locally on the HA server, separately for each connected Local
+To-do list, and is shared across devices. It initially learns available completed
+tasks, then newly observed task identities from native To-do, HA Lists, Assist
+and automations, even with the panel closed. Already-active items are excluded
+by default. Matching ignores case/Unicode width/repeated spaces, prefers exact
+and prefix matches, then frequency and recency. Selecting a suggestion creates
+a new native task; it does not reopen an old task or copy old dates/notes.
+
+Administrators can open **View options → Suggestion history** to search learned
+labels, forget one, disable learning, change active-item exclusion, clear history,
+or rebuild from currently available completed tasks. Clear/rebuild ask for
+confirmation and never modify native tasks. History is shared, so these settings
+affect everyone using that list. Turning learning off preserves existing labels.
+Clear/Forget retain observed UID markers to prevent unchanged snapshots from
+immediately relearning old labels; a new task can teach the label again.
+
+This is an observed-use catalog, not a complete purchase history. Previously
+deleted tasks and activity missed while HA is stopped cannot be reconstructed;
+renaming/reopening the same task does not increase its count. Each list retains
+up to 2,000 labels and 50,000 observed UID markers. Reaching the UID limit pauses
+further learning while keeping existing suggestions. No cloud, AI or Recorder
+history is required. Existing third-party bindings do not gain autocomplete.
+Removing the HA Lists config entry deletes its learned catalog, while native
+lists and tasks remain intact. Backups may contain this local history.
 
 ## Repeatable development instance
 

@@ -10,9 +10,12 @@ from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.helpers.storage import Store
 
 from .const import CONF_CREATED_ENTRIES, DOMAIN, SIGNAL_LISTS_UPDATED
 from .list_websocket import register_commands
+from .suggestion_websocket import register_commands as register_suggestion_commands
+from .suggestions import CATALOG, SuggestionCatalog
 
 PANEL_PATH = "ha-lists"
 ASSET_URL = "/ha_lists_static"
@@ -33,6 +36,8 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
 async def async_entry_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Wake connected panels after configuration/options changes."""
     async_dispatcher_send(hass, SIGNAL_LISTS_UPDATED)
+    if catalog := hass.data.get(CATALOG):
+        catalog.sync()
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -50,8 +55,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
             ]
         )
         register_commands(hass)
+        register_suggestion_commands(hass)
         # HTTP routes and WebSocket commands live for the entire HA process.
         hass.data[ASSETS_REGISTERED] = True
+    catalog = SuggestionCatalog(hass, entry)
+    await catalog.async_load()
     await panel_custom.async_register_panel(
         hass,
         frontend_url_path=PANEL_PATH,
@@ -62,12 +70,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
         require_admin=False,
     )
     hass.data[DOMAIN] = True
+    hass.data[CATALOG] = catalog
+    catalog.sync()
     entry.async_on_unload(entry.add_update_listener(async_entry_updated))
     async_dispatcher_send(hass, SIGNAL_LISTS_UPDATED)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Remove the sidebar panel when the entry unloads."""
+    if catalog := hass.data.pop(CATALOG, None):
+        await catalog.async_stop()
     if hass.data.pop(DOMAIN, None):
         async_remove_panel(hass, PANEL_PATH)
         async_dispatcher_send(hass, SIGNAL_LISTS_UPDATED)
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Remove our learned history on uninstall; native lists/tasks remain intact."""
+    await Store(hass, 1, f"{DOMAIN}.suggestions").async_remove()

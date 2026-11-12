@@ -1,5 +1,65 @@
 # HA Lists — handoff for a new local Codex session
 
+## Local suggestions/autocomplete update (2026-11-12)
+
+- Autocomplete uses a shared HA-managed Store (schema 1, key
+  `ha_lists.suggestions`), separate per connected Local To-do config-entry ID.
+  Native tasks remain authoritative. There is no third-party history workflow,
+  cloud, AI or Recorder dependency; previous provider bindings remain intact.
+- `suggestions.py` observes selected entities with public filtered state-change
+  and state-report helpers (including unchanged counts), coalesces reports and
+  reads `todo.get_items` on attachment/updates. Completed tasks seed the first
+  snapshot; existing active tasks are baselined. New observed UIDs are learned
+  once, including native Assist and automation additions with no panel open.
+  UID markers/settings survive restart. Unknown/deleted historical activity
+  cannot be reconstructed; frequency is observed use, not purchase count.
+- Labels normalize Unicode NFKC/case/whitespace; exact/prefix/substring ranking,
+  then frequency/recency/alphabetical ties. Cap at 2,000 labels and 50,000 seen
+  UIDs per list; stop new learning at the UID cap. Native renames preserve catalog
+  identity; native deletion is pruned on reconciliation/startup. Integration
+  removal deletes its catalog without touching native tasks.
+- `suggestion_websocket.py` validates bounded queries, current selected Local
+  identities and HA read permissions. Shared history management/history browsing
+  is admin-only. Explicit saves serialize with ingestion; lifecycle listeners,
+  background tasks and pending frontend requests clean up on unload/disconnect.
+- The panel debounces 150 ms, displays five options below quick entry, adds a new
+  task on tap or highlighted Enter, and preserves free text, IME and focus.
+  Actual native input semantics use composed focus events and ARIA element
+  references across HA shadow roots. Stale replies and optional query failures
+  cannot interfere with normal entry. Admin controls under View options provide
+  searchable history, Forget, learning/exclude toggles and confirmed Clear/Rebuild.
+  Clearing preserves UID markers; disabling learning baselines UIDs without
+  learning labels. Rebuild explicitly replaces history from completed items.
+- Guidance consulted: current Core AGENTS/integration knowledge skill, official
+  To-do entity docs and pinned native entity/intent implementation; public
+  filtered state-report guidance maps to selected-entity observation (no private
+  entity-component access). HA Store/config-entry lifecycle maps to versioned
+  async storage, cleanup and real disk-restart tests. Current custom-panel and
+  WAI-ARIA combobox guidance maps to native shell/narrow behavior, stable focus,
+  keyboard/touch and actual input/listbox element references. Current HACS and
+  official pytest-homeassistant guidance reviewed; no dependency, minimum-version,
+  config schema, native task API or backend translation contract changed.
+  Sources: https://contributors.home-assistant.io/core/entities/todo/
+  https://contributors.home-assistant.io/blog/2024/03/20/state_reported_timestamp/
+  https://contributors.home-assistant.io/frontend/custom-ui/panel/
+  https://www.w3.org/WAI/ARIA/apg/patterns/combobox/
+- Layer choices: real HA tests cover native/Assist observation, UID identity,
+  permissions, controls, caps, failure recovery, unload/uninstall and disk restart;
+  panel tests cover matching presentation, safe text, debounce, selection/IME,
+  focus, stale replies and history failures. Installed-HA Playwright covers
+  completed seeding, native identities, keyboard/touch, active exclusion,
+  cross-session/closed-panel learning and non-destructive history controls.
+  Real Android keyboard/IME and manual screen-reader testing remain outstanding.
+- Final local verification passed: Ruff/format/syntax, 54 Python tests with
+  97.42% integration coverage, 63 panel tests, and the complete disposable-HA
+  browser workflow. Browser assertions verify actual native-input ARIA controls
+  and active-descendant element references, beyond merely setting attributes on
+  the HA input host. Reviewed suggestion/history mobile and desktop screenshots.
+  Check GitHub Validate for CI on the current commit; local success alone does
+  not certify CI.
+
+The compact-toolbar and earlier updates below describe previous baselines.
+
 ## Compact task toolbar update (2026-11-11)
 
 - Search starts collapsed behind a magnifying-glass button, expands/focuses on
