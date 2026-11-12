@@ -259,6 +259,17 @@ other todo entities
 
 ### Task search
 
+- Compact presentation (2026-11-11): search starts collapsed behind an accessible
+  magnifying-glass button. Activating it expands the labelled field and Clear
+  search control and focuses the field. When the query is empty, leaving the
+  search controls collapses them; Escape also collapses and returns focus to the
+  search button. Clear search keeps focus in the field. A nonempty query stays
+  visible after blur so a hidden search cannot silently exclude tasks. Preserve
+  the input node, caret and task drafts through these transitions. Delay an
+  empty-search collapse until an ongoing pointer gesture completes so moving
+  layout cannot swallow task taps/clicks; clean up pointer listeners and pending
+  collapse timers on disconnect.
+
 - Search the selected list's task titles and provider descriptions with a literal,
   case-insensitive substring. Ignore surrounding query whitespace; an empty query
   shows all tasks allowed by the current filter. Search and filters intersect.
@@ -280,6 +291,18 @@ other todo entities
   updates and search interaction in the disposable-HA browser workflow.
 
 ### Task sorting — active items
+
+- Compact presentation (2026-11-11): place Show tasks and Sort active tasks,
+  including their explanatory text, behind a **View options** disclosure, closed
+  initially. Use a real keyboard-operable button with `aria-expanded` and
+  `aria-controls`; do not apply ARIA menu roles to native form controls. Escape
+  closes the options and returns focus to its button. Keep matching/total counts
+  visible and show a compact summary of non-default filter/sort choices while
+  options are closed. Closing controls never resets choices or changes tasks.
+  New panels/reloads start collapsed with the existing default values. Verify
+  hidden defaults, keyboard/focus, active-query visibility, retained choices and
+  drafts at the panel and installed-HA browser layers; backend contracts stay
+  unchanged and the existing HA tests remain required.
 
 - Provide a labelled **Sort active tasks** selector with **Newest first**
   (default) and **Oldest first**. Native To-do items do not expose a general

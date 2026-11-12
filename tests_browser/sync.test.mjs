@@ -12,6 +12,7 @@ import { verifyTaskSearch } from "./search-checks.mjs";
 import { verifyPanelNavigation } from "./navigation-checks.mjs";
 import { verifyTaskSorting } from "./sort-checks.mjs";
 import { verifyListManagement } from "./list-checks.mjs";
+import { verifyCompactControls } from "./compact-checks.mjs";
 
 const docker = promisify(execFile);
 const image = "ghcr.io/home-assistant/home-assistant:2026.11.1";
@@ -212,6 +213,7 @@ test("native To-do and HA Lists share task changes across browser sessions", { t
     await lists.getByRole("button", { name: listName }).waitFor();
     await lists.getByText("No tasks found.").waitFor();
     await verifyPanelNavigation(lists);
+    await verifyCompactControls(lists);
     const quickAdd = lists.locator("ha-lists-panel ha-input input");
     await lists.locator("ha-lists-panel ha-input").evaluate(async (input) => {
       await input.updateComplete;

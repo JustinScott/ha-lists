@@ -77,14 +77,87 @@ async function setup({ lists = ["todo.groceries"], items = [], service, readItem
 
 function rows(panel) { return [...panel.shadowRoot.querySelectorAll("li")]; }
 function search(window, panel, value) {
+  if (panel._searchControls.hidden) panel._searchToggle.click();
   const input = panel.shadowRoot.querySelector('input[type="search"]');
   input.value = value;
   input.dispatchEvent(new window.Event("input", { bubbles: true }));
   return input;
 }
+
+test("compact controls start collapsed, preserve active choices and close by keyboard", async () => {
+  const { panel, window, calls, requests } = await setup();
+  assert.equal(panel._viewOptions.hidden, true);
+  assert.equal(panel._searchControls.hidden, true);
+  assert.equal(panel._viewToggle.getAttribute("aria-expanded"), "false");
+  panel._viewToggle.click();
+  assert.equal(panel._viewOptions.hidden, false);
+  assert.equal(panel._viewToggle.getAttribute("aria-expanded"), "true");
+  selectFilter(window, panel, "active");
+  selectSort(window, panel, "oldest");
+  panel._sortSelect.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  assert.equal(panel._viewOptions.hidden, true);
+  assert.equal(panel.shadowRoot.activeElement, panel._viewToggle);
+  assert.equal(panel._viewSummary.textContent, "Active · Oldest first");
+  panel._viewToggle.click();
+  assert.equal(panel._filterSelect.value, "active");
+  assert.equal(panel._sortSelect.value, "oldest");
+  assert.equal(calls.length, 0);
+  assert.equal(requests.filter((request) => request.type === "todo/item/list").length, 1);
+  window.close();
+});
+
+test("search disclosure keeps a query visible and collapses an empty field on blur or Escape", async () => {
+  const { panel, window } = await setup({ items: [{ uid: "a", summary: "Apples", status: "needs_action" }] });
+  panel._searchToggle.click();
+  const input = panel._searchInput;
+  assert.equal(panel.shadowRoot.activeElement, input);
+  assert.equal(panel._searchToggle.getAttribute("aria-expanded"), "true");
+  search(window, panel, "Apples");
+  panel._viewToggle.focus();
+  await tick();
+  assert.equal(panel._searchControls.hidden, false);
+  assert.equal(input.value, "Apples");
+  panel._clearSearch.click();
+  assert.equal(panel.shadowRoot.activeElement, input);
+  const taskBeforeBlur = rows(panel)[0];
+  panel._viewToggle.focus();
+  await tick();
+  assert.equal(panel._searchControls.hidden, true);
+  assert.equal(rows(panel)[0], taskBeforeBlur, "blur must preserve the target of an in-flight task tap");
+  panel._searchToggle.click();
+  input.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  assert.equal(panel._searchControls.hidden, true);
+  assert.equal(panel.shadowRoot.activeElement, panel._searchToggle);
+  window.close();
+});
 function change(window, checkbox, checked) {
   checkbox.checked = checked;
   checkbox.dispatchEvent(new window.Event("change", { bubbles: true }));
+}
+
+for (const [down, up] of [["pointerdown", "pointerup"], ["mousedown", "mouseup"]]) {
+  test(`empty-search blur waits for ${down} and cleans up pending collapse`, async () => {
+    const { panel, window } = await setup({ items: [{ uid: "a", summary: "Apples", status: "needs_action" }] });
+    panel._searchToggle.click();
+    const task = panel.shadowRoot.querySelector(".task-title");
+    task.dispatchEvent(new window.Event(down, { bubbles: true }));
+    task.focus();
+    await tick();
+    assert.equal(panel._searchControls.hidden, false, "do not shift the target during a pointer gesture");
+    task.dispatchEvent(new window.Event(up, { bubbles: true, composed: true }));
+    task.click();
+    await tick();
+    assert.equal(panel._editForm.hidden, false);
+    assert.equal(panel._searchControls.hidden, true);
+    panel._searchToggle.click();
+    panel._searchToggle.dispatchEvent(new window.Event(down, { bubbles: true }));
+    panel._searchToggle.dispatchEvent(new window.Event(up, { bubbles: true, composed: true }));
+    assert.notEqual(panel._searchBlurTimer, null);
+    panel.remove();
+    assert.equal(panel._searchBlurTimer, null);
+    assert.equal(panel._searchPointerActive, false);
+    window.close();
+  });
 }
 
 test("creating a native list uses its returned identity and suppresses repeated submits", async () => {

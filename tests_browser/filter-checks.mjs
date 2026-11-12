@@ -21,6 +21,8 @@ export async function verifyTaskFilters({ browser, page, base, token, username, 
   await page.getByRole("checkbox", { name: "Reopen Filter completed", exact: true }).waitFor();
 
   const choose = async (target, filter, expected) => {
+    const options = target.getByRole("button", { name: "View options", exact: true });
+    if (await options.getAttribute("aria-expanded") !== "true") await options.click();
     await target.getByRole("combobox", { name: "Show tasks", exact: true }).selectOption(filter);
     const panel = await target.locator("ha-lists-panel").elementHandle();
     try {
@@ -78,6 +80,8 @@ export async function verifyTaskFilters({ browser, page, base, token, username, 
     await other.close();
   }
   await page.clock.setFixedTime(new Date());
+  const options = page.getByRole("button", { name: "View options", exact: true });
+  if (await options.getAttribute("aria-expanded") !== "true") await options.click();
   await page.getByRole("combobox", { name: "Show tasks", exact: true }).selectOption("all");
   console.log("Verified all five filters, keyboard selection, completion/reopening, and different user time zones");
 }

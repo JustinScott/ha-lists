@@ -8,6 +8,7 @@ export async function verifyTaskSearch({ page, base, token, post, entityId, list
   const search = page.getByRole("searchbox", { name: "Search tasks", exact: true });
   const quickAdd = page.locator('ha-lists-panel ha-input[label="Add a task"] input');
   await quickAdd.fill("Unsent search draft");
+  await page.getByRole("button", { name: "Search tasks", exact: true }).click();
   await search.fill("  VIOLET  ");
   await page.locator('ha-lists-panel [role="status"]').filter({ hasText: /^1 of \d+ tasks$/ }).waitFor();
   await page.getByRole("button", { name: "Rename Search sample", exact: true }).waitFor();

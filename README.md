@@ -121,6 +121,13 @@ that remains a manual acceptance check before a release.
 
 ## Task search, filters and sorting
 
+The task toolbar starts compact. Tap the magnifying glass to expand **Search
+tasks**; an empty search collapses when you leave it or press Escape. An active
+query stays visible so you can see why tasks are filtered. **Clear search** keeps
+focus in the field. Open **View options** for the Show tasks and Sort active tasks
+selectors; close it with its button or Escape. Counts and a short summary of
+non-default view choices remain visible when the options are closed.
+
 Use **Search tasks** to find a literal substring in task titles or descriptions
 in the selected list. Matching ignores case and surrounding spaces, and combines
 with **Show tasks**. **Clear search** keeps the current filter. The query stays

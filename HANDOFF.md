@@ -1,5 +1,35 @@
 # HA Lists — handoff for a new local Codex session
 
+## Compact task toolbar update (2026-11-11)
+
+- Search starts collapsed behind a magnifying-glass button, expands/focuses on
+  activation, and collapses when empty on blur or Escape. Active queries stay
+  visible; Clear search retains field focus. Filter/sort controls and help now
+  live in a closed-by-default View options disclosure. Escape closes options and
+  restores button focus. Counts and non-default choice summaries remain visible.
+- Frontend-only change: existing native task, backend permission and storage
+  contracts are unchanged. New panel tests cover hidden defaults, retained
+  choices, query visibility, closing/focus and no provider writes. Playwright
+  exercises actual touch/keyboard controls, prior search/filter/sort behavior,
+  drafts, native synchronization and desktop/mobile layouts.
+- Guidance reconsulted: current HA custom-panel guidance (native shell/narrow
+  state retained), Core AGENTS/integration knowledge skill, HACS packaging and
+  official pytest-homeassistant README (existing backend suite remains required).
+  WAI-ARIA disclosure guidance maps to native buttons with aria-expanded and
+  aria-controls; form controls remain native, without menu roles:
+  https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/
+  No dependency, minimum-version, backend API or translation contract changed;
+  the custom panel remains English as before. Specs/README updated together.
+- Empty-search blur waits until an active pointer gesture finishes, then updates
+  only the search controls. This avoids shifting/replacing a task click target
+  during a tap. Document pointer listeners and pending timers clean up on
+  disconnect; panel regression tests cover gesture ordering and cleanup.
+- Verified locally: Ruff/format/syntax, 39 Python tests (99.08% coverage),
+  58 panel tests, and the full disposable-HA Playwright workflow passed.
+  Reviewed compact/expanded mobile and desktop screenshots. Real Android
+  keyboard/IME verification remains manual; consult the current commit's GitHub
+  Validate run for CI results.
+
 ## Local list management update (2026-11-11)
 
 - New panel controls let administrators create native Local To-do lists, connect

@@ -18,6 +18,7 @@ export async function verifyTaskSorting({ page, base, token, post, entityId, lis
   const filter = page.getByRole("combobox", { name: "Show tasks", exact: true });
   const quickAdd = page.locator('ha-lists-panel ha-input[label="Add a task"] input');
   await quickAdd.fill("Unsent sorting draft");
+  await page.getByRole("button", { name: "Search tasks", exact: true }).click();
   await search.fill("Sort ");
   const panel = await page.locator("ha-lists-panel").elementHandle();
   const expectTitles = async (expected) => {
@@ -74,7 +75,11 @@ export async function verifyTaskSorting({ page, base, token, post, entityId, lis
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     await page.reload();
     await page.getByRole("button", { name: "Rename Sort older", exact: true }).waitFor();
+    assert.equal(await sort.count(), 0);
+    assert.equal(await search.count(), 0);
+    await page.getByRole("button", { name: "View options", exact: true }).click();
     assert.equal(await sort.inputValue(), "newest");
+    await page.getByRole("button", { name: "Search tasks", exact: true }).click();
     assert.equal(await search.inputValue(), "");
     console.log("Verified sorting, keyboard selection, native order, filters/search, drafts, list switches and updates");
   } finally {

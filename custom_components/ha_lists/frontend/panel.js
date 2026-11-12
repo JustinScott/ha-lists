@@ -35,6 +35,23 @@ class HaListsPanel extends HTMLElement {
     this._filter = "all";
     this._sort = "newest";
     this._search = "";
+    this._searchOpen = false;
+    this._viewOpen = false;
+    this._searchPointerActive = false;
+    this._searchBlurTimer = null;
+    this.shadowRoot.addEventListener("pointerdown", () => { this._searchPointerActive = true; });
+    this.shadowRoot.addEventListener("mousedown", () => { this._searchPointerActive = true; });
+    this._onSearchPointerEnd = () => {
+      if (!this._searchPointerActive) return;
+      clearTimeout(this._searchBlurTimer);
+      // Let the pointer gesture's click finish before collapsing layout beneath
+      // it, including compatibility mouse events synthesized after touchend.
+      this._searchBlurTimer = setTimeout(() => {
+        this._searchBlurTimer = null;
+        this._searchPointerActive = false;
+        this.collapseEmptySearch();
+      }, 0);
+    };
     this._itemSubscription = null;
     this._filterTimer = null;
     this._onVisibility = () => {
@@ -82,6 +99,9 @@ class HaListsPanel extends HTMLElement {
   get narrow() { return this._narrow; }
   connectedCallback() {
     document.addEventListener("visibilitychange", this._onVisibility);
+    document.addEventListener("pointerup", this._onSearchPointerEnd);
+    document.addEventListener("pointercancel", this._onSearchPointerEnd);
+    document.addEventListener("mouseup", this._onSearchPointerEnd);
     this.render();
     this.subscribeConfiguration();
     if (this._selected) this.loadItems();
@@ -93,6 +113,12 @@ class HaListsPanel extends HTMLElement {
     this.stopConfigurationSubscription();
     this.stopItemSubscription();
     document.removeEventListener("visibilitychange", this._onVisibility);
+    document.removeEventListener("pointerup", this._onSearchPointerEnd);
+    document.removeEventListener("pointercancel", this._onSearchPointerEnd);
+    document.removeEventListener("mouseup", this._onSearchPointerEnd);
+    clearTimeout(this._searchBlurTimer);
+    this._searchBlurTimer = null;
+    this._searchPointerActive = false;
     clearTimeout(this._filterTimer);
     this._filterTimer = null;
   }
@@ -100,6 +126,20 @@ class HaListsPanel extends HTMLElement {
   localDay(date) {
     return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"),
       String(date.getDate()).padStart(2, "0")].join("-");
+  }
+
+  renderSearchControls() {
+    this._searchControls.hidden = !this._configured?.includes(this._selected) ||
+      !(this._searchOpen || this._search.trim());
+    this._searchToggle.setAttribute("aria-expanded", String(!this._searchControls.hidden));
+  }
+
+  collapseEmptySearch() {
+    if (this.isConnected && !this._search.trim() &&
+        !this._searchControls.contains(this.shadowRoot.activeElement)) {
+      this._searchOpen = false;
+      this.renderSearchControls();
+    }
   }
 
   stopConfigurationSubscription() {
@@ -585,6 +625,10 @@ class HaListsPanel extends HTMLElement {
         .search label { display:grid; gap:4px; flex:1; min-width:0; }
         .search input { box-sizing:border-box; width:100%; min-width:0; min-height:44px; padding:8px; font:inherit; color:var(--primary-text-color); background:var(--card-background-color); border:1px solid var(--divider-color); border-radius:6px; }
         .search button { min-height:44px; padding:8px; font:inherit; color:inherit; background:var(--secondary-background-color); border:1px solid var(--divider-color); border-radius:6px; }
+        .task-tools { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:12px 0; }
+        .task-tools button { min-height:44px; padding:8px 12px; font:inherit; color:inherit; background:var(--secondary-background-color); border:1px solid var(--divider-color); border-radius:6px; cursor:pointer; }
+        .task-tools svg { width:22px; height:22px; display:block; fill:currentColor; }
+        .view-options { padding:12px; border:1px solid var(--divider-color); border-radius:6px; margin:12px 0; }
         .filters { display:flex; align-items:center; flex-wrap:wrap; gap:var(--ha-space-2,8px) var(--ha-space-4,16px); margin:var(--ha-space-3,12px) 0; }
         .filters label { display:flex; align-items:center; gap:var(--ha-space-2,8px); }
         .filters select { max-width:100%; min-height:44px; padding:var(--ha-space-2,8px); font:inherit; color:var(--primary-text-color); background:var(--card-background-color); border:1px solid var(--divider-color); border-radius:var(--ha-border-radius-md,6px); }
@@ -759,13 +803,61 @@ class HaListsPanel extends HTMLElement {
       });
       this._deleteListButton.className = "delete-action";
       this._selectedListActions.append(this._hideListButton, this._deleteListButton);
+      this._taskTools = document.createElement("div");
+      this._taskTools.className = "task-tools";
+      this._searchToggle = actionButton("", () => {
+        this._searchOpen = !this._searchOpen || Boolean(this._search.trim());
+        this.render();
+        if (this._searchOpen) this._searchInput.focus();
+      });
+      this._searchToggle.setAttribute("aria-label", "Search tasks");
+      this._searchToggle.title = "Search tasks";
+      this._searchToggle.setAttribute("aria-controls", "task-search");
+      const searchIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      searchIcon.setAttribute("viewBox", "0 0 24 24");
+      searchIcon.setAttribute("aria-hidden", "true");
+      const searchPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      searchPath.setAttribute("d", "M9.5 3a6.5 6.5 0 1 0 3.97 11.65L19.82 21 21 19.82l-6.35-6.35A6.5 6.5 0 0 0 9.5 3m0 2a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9");
+      searchIcon.append(searchPath);
+      this._searchToggle.append(searchIcon);
+      this._viewToggle = actionButton("View options", () => {
+        this._viewOpen = !this._viewOpen;
+        this.render();
+      });
+      this._viewToggle.setAttribute("aria-controls", "task-view-options");
+      this._viewOptions = document.createElement("section");
+      this._viewOptions.id = "task-view-options";
+      this._viewOptions.className = "view-options";
+      this._viewOptions.setAttribute("aria-label", "Task view options");
+      this._viewOptions.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          this._viewOpen = false;
+          this.render();
+          this._viewToggle.focus();
+        }
+      });
       this._searchControls = document.createElement("div");
+      this._searchControls.id = "task-search";
       this._searchControls.className = "search";
+      this._searchControls.addEventListener("focusout", () => {
+        queueMicrotask(() => {
+          if (!this._searchPointerActive) this.collapseEmptySearch();
+        });
+      });
       const searchLabel = document.createElement("label");
       this._searchInput = document.createElement("input");
       this._searchInput.type = "search";
       this._searchInput.maxLength = 255;
       this._searchInput.placeholder = "Titles and descriptions";
+      this._searchInput.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !event.isComposing && !this._search.trim()) {
+          event.preventDefault();
+          this._searchOpen = false;
+          this.render();
+          this._searchToggle.focus();
+        }
+      });
       this._searchInput.addEventListener("input", () => {
         this._search = this._searchInput.value;
         this.render();
@@ -815,13 +907,17 @@ class HaListsPanel extends HTMLElement {
       this._filterCount = document.createElement("span");
       this._filterCount.setAttribute("role", "status");
       this._filterCount.setAttribute("aria-live", "polite");
-      this._filters.append(filterLabel, sortLabel, this._filterCount);
+      this._filters.append(filterLabel, sortLabel);
+      this._viewSummary = document.createElement("span");
+      this._viewSummary.className = "muted";
+      this._taskTools.append(this._searchToggle, this._viewToggle, this._viewSummary, this._filterCount);
       this._sortHelp = document.createElement("p");
       this._sortHelp.id = "task-sort-help";
       this._sortHelp.className = "filter-help muted";
       this._sortHelp.textContent = "Newest/oldest use source-list order. Completed tasks keep their source order.";
       this._filterHelp = document.createElement("p");
       this._filterHelp.className = "filter-help muted";
+      this._viewOptions.append(this._filters, this._sortHelp, this._filterHelp);
       this._form = document.createElement("form");
       // Use Home Assistant's native input component for companion-app focus handling.
       // ha-input superseded ha-textfield in HA 2026.4.
@@ -940,7 +1036,7 @@ class HaListsPanel extends HTMLElement {
       this._editError = document.createElement("p");
       this._editError.className = "error";
       this._editError.setAttribute("role", "alert");
-      article.append(this._heading, this._selectedListActions, this._searchControls, this._filters, this._sortHelp, this._filterHelp, this._form, this._editForm, this._editError, this._results);
+      article.append(this._heading, this._selectedListActions, this._taskTools, this._searchControls, this._viewOptions, this._form, this._editForm, this._editError, this._results);
       layout.append(listPane, article);
       this._main.append(layout);
       this.shadowRoot.replaceChildren(style, header, this._main);
@@ -971,7 +1067,6 @@ class HaListsPanel extends HTMLElement {
     this._nav.replaceChildren(...navChildren);
     this.renderListManagement();
     this._heading.textContent = selected?.attributes?.friendly_name || "Select a list";
-    this._searchControls.hidden = !selected;
     this._clearSearch.disabled = !this._search;
     this._form.hidden = !selected;
     // Do not disable the focused input during a write or refresh: on Android
@@ -985,8 +1080,16 @@ class HaListsPanel extends HTMLElement {
     }
     this.renderEditor();
     const visibleItems = this.filteredItems();
-    this._filters.hidden = !selected;
+    this._taskTools.hidden = !selected;
+    this.renderSearchControls();
+    this._viewOptions.hidden = !selected || !this._viewOpen;
+    this._viewToggle.setAttribute("aria-expanded", String(!this._viewOptions.hidden));
     this._filterSelect.value = this._filter;
+    this._viewSummary.textContent = [
+      this._filter !== "all" ? this._filterSelect.selectedOptions[0]?.textContent : "",
+      this._sort !== "newest" ? "Oldest first" : "",
+    ].filter(Boolean).join(" · ");
+    this._filters.hidden = !selected;
     this._sortSelect.value = this._sort;
     this._sortHelp.hidden = !selected;
     this._filterCount.textContent = this._loading ? "Loading tasks…" : `${visibleItems.length} of ${this._items.length} tasks`;
