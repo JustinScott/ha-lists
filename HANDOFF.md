@@ -1,5 +1,58 @@
 # HA Lists — handoff for a new local Codex session
 
+## Stable list layout and first-completion fix (2026-11-12)
+
+- The left list-name card no longer stretches with the task card; selected names
+  change background without font-weight wrapping changes. Actual desktop bounds
+  are checked across lists with different task counts.
+- Search and a labelled List menu button sit at the task heading's top-right.
+  Remove/Delete and View options (including history) are inside the floating
+  menu. Existing admin guards and deletion confirmations remain. Escape closes
+  the current disclosure; outside pointer/focus or list switching closes the menu.
+  Search expands below the heading. The native HA sidebar control stays separate.
+- Suggestions are an anchored, shadowed overlay, scroll-limited to available
+  viewport space and placed above when necessary. They do not move task rows.
+  Retain previous option nodes/results while a debounced query refreshes, mark
+  aria-busy, reset selection and ignore stale replies. Same-list native updates
+  requery focused drafts without clearing the popup. Viewport/page listeners
+  reposition overlays and clean up on disconnect. Browser tests observe hidden
+  mutations through real keystrokes and compare task geometry.
+- Reproduced a missed case: tasks active at first initialization were marked seen
+  forever, so their later completion never taught a title. Optional persisted
+  `baseline_active` UID eligibility now learns those once on first completion,
+  including after restart. Clear/Forget/disable cancel the corresponding
+  eligibility; repeated snapshots/reopening do not inflate frequency. Old records
+  without eligibility preserve seen/forgotten history. After updating an affected
+  installation, explicitly use List menu → View options → Suggestion history →
+  Rebuild from completed items to recover missed completed titles without changing
+  native tasks. No automatic rebuild or production changes were performed.
+- Guidance reconsulted: current HA To-do entity/state-report docs and pinned
+  public API contracts, Core AGENTS/integration knowledge skill, official pytest
+  framework and HACS requirements. Native authority/async persistence map to real
+  Local To-do first-completion, restart and controls regressions. Current custom
+  panel and WAI-ARIA combobox/disclosure guidance map to native shell/narrow state,
+  labelled buttons, form semantics, focus restoration, stable input/overlay DOM
+  and installed-HA keyboard/touch checks. No new dependency, config schema,
+  minimum HA version, native task mutation or translation contract changed.
+  Specs/README document the changed UI and optional store field.
+  Sources: https://contributors.home-assistant.io/core/entities/todo/
+  https://contributors.home-assistant.io/blog/2024/03/20/state_reported_timestamp/
+  https://contributors.home-assistant.io/frontend/custom-ui/panel/
+  https://www.w3.org/WAI/ARIA/apg/patterns/combobox/
+  https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/
+- Layer choices: HA integration tests cover first completion, persisted
+  eligibility, old-catalog recovery and non-relearning after history controls;
+  panel tests cover pending-query continuity and accessible menu/focus behavior;
+  Playwright covers actual layout, hidden-state stability, native interactions
+  and first-completion suggestions. Existing panel/task/list tests remain intact.
+  Real Android keyboard/IME and manual screen-reader verification remain pending.
+- Final local checks passed: Ruff/format/syntax, 59 Python tests (97.09%
+  integration coverage), 65 panel tests and the complete disposable-HA browser
+  workflow. Reviewed desktop/mobile floating-popup and menu screenshots. Browser
+  geometry checks wait for HA's asynchronous narrow-layout update to settle,
+  then retain the original no-overflow assertions. Consult GitHub Validate for
+  the current commit's CI result separately.
+
 ## Local suggestions/autocomplete update (2026-11-12)
 
 - Autocomplete uses a shared HA-managed Store (schema 1, key

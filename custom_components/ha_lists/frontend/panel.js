@@ -33,6 +33,11 @@ class HaListsPanel extends HTMLElement {
     this._suggestionIndex = -1;
     this._suggestionEpoch = 0;
     this._suggestionTimer = null;
+    this._suggestionPending = false;
+    this._onSuggestionLayout = () => {
+      if (this._suggestionList && !this._suggestionList.hidden) this.positionSuggestions();
+      if (this._listMenu && !this._listMenu.hidden) this.positionListMenu();
+    };
     this._historyEpoch = 0;
     this._historyBusy = false;
     this._requestId = 0;
@@ -43,6 +48,19 @@ class HaListsPanel extends HTMLElement {
     this._search = "";
     this._searchOpen = false;
     this._viewOpen = false;
+    this._listMenuOpen = false;
+    this.shadowRoot.addEventListener("pointerdown", (event) => {
+      if (this._listMenuOpen && !this._listMenuAnchor.contains(event.target)) {
+        this._listMenuOpen = false;
+        this.renderListMenu();
+      }
+    });
+    this.shadowRoot.addEventListener("focusin", (event) => {
+      if (this._listMenuOpen && !this._listMenuAnchor.contains(event.target)) {
+        this._listMenuOpen = false;
+        this.renderListMenu();
+      }
+    });
     this._searchPointerActive = false;
     this._searchBlurTimer = null;
     this.shadowRoot.addEventListener("pointerdown", () => { this._searchPointerActive = true; });
@@ -104,6 +122,10 @@ class HaListsPanel extends HTMLElement {
   }
   get narrow() { return this._narrow; }
   connectedCallback() {
+    window.addEventListener("resize", this._onSuggestionLayout);
+    document.addEventListener("scroll", this._onSuggestionLayout, true);
+    window.visualViewport?.addEventListener("resize", this._onSuggestionLayout);
+    window.visualViewport?.addEventListener("scroll", this._onSuggestionLayout);
     document.addEventListener("visibilitychange", this._onVisibility);
     document.addEventListener("pointerup", this._onSearchPointerEnd);
     document.addEventListener("pointercancel", this._onSearchPointerEnd);
@@ -114,6 +136,10 @@ class HaListsPanel extends HTMLElement {
   }
 
   disconnectedCallback() {
+    window.removeEventListener("resize", this._onSuggestionLayout);
+    document.removeEventListener("scroll", this._onSuggestionLayout, true);
+    window.visualViewport?.removeEventListener("resize", this._onSuggestionLayout);
+    window.visualViewport?.removeEventListener("scroll", this._onSuggestionLayout);
     this.dismissSuggestions();
     ++this._historyEpoch;
     ++this._requestId;
@@ -140,6 +166,24 @@ class HaListsPanel extends HTMLElement {
     this._searchControls.hidden = !this._configured?.includes(this._selected) ||
       !(this._searchOpen || this._search.trim());
     this._searchToggle.setAttribute("aria-expanded", String(!this._searchControls.hidden));
+  }
+
+  renderListMenu() {
+    this._listMenu.hidden = !this._listMenuOpen || !this._selected;
+    this._listMenuToggle.setAttribute("aria-expanded", String(!this._listMenu.hidden));
+    if (!this._listMenu.hidden) this.positionListMenu();
+  }
+
+  positionListMenu() {
+    const anchor = this._listMenuToggle.getBoundingClientRect();
+    const viewport = window.visualViewport;
+    const viewportTop = viewport?.offsetTop || 0;
+    const top = Math.max(viewportTop, this.shadowRoot.querySelector("header")?.getBoundingClientRect().bottom || 0);
+    const below = viewportTop + (viewport?.height || window.innerHeight) - anchor.bottom - 8;
+    const above = anchor.top - top - 8;
+    const upward = below < 200 && above > below;
+    this._listMenu.classList.toggle("above", upward);
+    this._listMenu.style.maxHeight = `${Math.max(88, Math.min(640, upward ? above : below))}px`;
   }
 
   collapseEmptySearch() {
@@ -234,6 +278,7 @@ class HaListsPanel extends HTMLElement {
   confirmListDeletion(target) {
     if (this._listOperation) return;
     this._deleteListTarget = target;
+    this._listMenuOpen = false;
     this._confirmListName.value = "";
     this._listError = "";
     this.render();
@@ -265,6 +310,7 @@ class HaListsPanel extends HTMLElement {
         this._loading = false;
         this._error = "";
         this.render();
+        this.refreshSuggestionsForDraft();
       }, { type: "todo/item/subscribe", entity_id: entityId });
       if (this._itemSubscription !== subscription) await unsubscribe();
       else subscription.unsubscribe = unsubscribe;
@@ -349,7 +395,8 @@ class HaListsPanel extends HTMLElement {
 
   async loadItems() {
     const entityId = this._selected;
-    this.dismissSuggestions();
+    if (this._suggestionEntity !== entityId) this.dismissSuggestions();
+    this._suggestionEntity = entityId;
     this.loadSuggestionHistory();
     this.subscribeItems(entityId);
     const requestId = ++this._requestId;
@@ -376,6 +423,7 @@ class HaListsPanel extends HTMLElement {
       if (requestId === this._requestId) {
         this._loading = false;
         this.render();
+        this.refreshSuggestionsForDraft();
       }
     }
   }
@@ -416,13 +464,24 @@ class HaListsPanel extends HTMLElement {
     ++this._suggestionEpoch;
     this._suggestions = [];
     this._suggestionIndex = -1;
+    this._suggestionPending = false;
     if (this._suggestionList) this.renderSuggestions();
   }
 
+  refreshSuggestionsForDraft() {
+    if (this._draft.trim() && this.shadowRoot.activeElement === this._input && !this._adding) this.queueSuggestions();
+  }
+
   queueSuggestions() {
-    this.dismissSuggestions();
+    clearTimeout(this._suggestionTimer);
+    ++this._suggestionEpoch;
     const query = this._draft.trim();
-    if (!query || this._adding) return;
+    if (!query || this._adding) { this.dismissSuggestions(); return; }
+    // Keep the last results in place while the next debounced query resolves.
+    // Reset selection so Enter still adds literal text until explicitly chosen.
+    this._suggestionIndex = -1;
+    this._suggestionPending = true;
+    this.renderSuggestions();
     const epoch = this._suggestionEpoch;
     const entityId = this._selected;
     const connection = this._connection;
@@ -431,9 +490,11 @@ class HaListsPanel extends HTMLElement {
         const result = await connection.sendMessagePromise({ type: "ha_lists/suggestions", entity_id: entityId, query });
         if (!this.isConnected || epoch !== this._suggestionEpoch || entityId !== this._selected || connection !== this._connection) return;
         this._suggestions = result.suggestions || [];
+        this._suggestionPending = false;
         this.renderSuggestions();
       } catch {
         // Suggestions are optional; failures never prevent normal task entry.
+        if (epoch === this._suggestionEpoch) this.dismissSuggestions();
       }
     }, 150);
   }
@@ -447,17 +508,25 @@ class HaListsPanel extends HTMLElement {
 
   renderSuggestions() {
     this._suggestionList.hidden = !this._suggestions.length;
-    const options = this._suggestions.map((title, index) => {
-      const option = document.createElement("div");
-      option.id = `task-suggestion-${index}`;
-      option.setAttribute("role", "option");
-      option.setAttribute("aria-selected", String(index === this._suggestionIndex));
-      option.textContent = title;
-      option.addEventListener("pointerdown", (event) => event.preventDefault());
-      option.addEventListener("click", () => this.chooseSuggestion(index));
-      return option;
-    });
-    this._suggestionList.replaceChildren(...options);
+    this._suggestionList.setAttribute("aria-busy", String(this._suggestionPending));
+    const key = JSON.stringify(this._suggestions);
+    if (key !== this._suggestionOptionKey) {
+      this._suggestionOptionKey = key;
+      const nodes = this._suggestions.map((title, index) => {
+        const option = document.createElement("div");
+        option.id = `task-suggestion-${index}`;
+        option.setAttribute("role", "option");
+        option.setAttribute("aria-selected", String(index === this._suggestionIndex));
+        option.textContent = title;
+        option.addEventListener("pointerdown", (event) => event.preventDefault());
+        option.addEventListener("click", () => this.chooseSuggestion(index));
+        return option;
+      });
+      this._suggestionList.replaceChildren(...nodes);
+    }
+    const options = [...this._suggestionList.children];
+    options.forEach((option, index) => option.setAttribute("aria-selected", String(index === this._suggestionIndex)));
+    this.positionSuggestions();
     const input = this._nativeInput || this._input;
     input.setAttribute("role", "combobox");
     input.setAttribute("aria-autocomplete", "list");
@@ -472,8 +541,21 @@ class HaListsPanel extends HTMLElement {
       ? (this._suggestionIndex < 0 ? `${options.length} suggestions. Use arrow keys to choose, Enter to add.` : this._suggestions[this._suggestionIndex]) : "";
   }
 
+  positionSuggestions() {
+    const field = this._entryField.getBoundingClientRect();
+    const viewport = window.visualViewport;
+    const viewportTop = viewport?.offsetTop || 0;
+    const top = Math.max(viewportTop, this.shadowRoot.querySelector("header")?.getBoundingClientRect().bottom || 0);
+    const bottom = viewportTop + (viewport?.height || window.innerHeight);
+    const below = bottom - field.bottom - 8;
+    const above = field.top - top - 8;
+    const upward = below < Math.min(132, this._suggestions.length * 44) && above > below;
+    this._suggestionList.classList.toggle("above", upward);
+    this._suggestionList.style.maxHeight = `${Math.max(44, Math.min(264, upward ? above : below))}px`;
+  }
+
   async loadSuggestionHistory() {
-    if (!this._historyPanel || !this._viewOpen || !this._management || !this._selected) return;
+    if (!this._historyPanel || !this._listMenuOpen || !this._viewOpen || !this._management || !this._selected) return;
     const epoch = ++this._historyEpoch;
     const entityId = this._selected;
     const connection = this._connection;
@@ -744,6 +826,17 @@ class HaListsPanel extends HTMLElement {
         header h1 { margin:0; font-size:20px; font-weight:400; }
         .layout { display:grid; grid-template-columns:minmax(220px,290px) minmax(0,1fr); gap:18px; }
         .list-pane,article { min-width:0; padding:18px; background:var(--card-background-color); border:1px solid var(--divider-color); border-radius:12px; }
+        .list-pane { align-self:start; }
+        .list-heading { display:flex; align-items:flex-start; gap:12px; }
+        .list-heading h2 { flex:1; min-width:0; margin:0; overflow-wrap:anywhere; }
+        .heading-actions { display:flex; gap:8px; flex:none; }
+        .heading-actions > button, .list-menu-anchor > button { display:grid; place-items:center; width:44px; height:44px; padding:10px; color:inherit; background:transparent; border:0; border-radius:8px; cursor:pointer; }
+        .heading-actions svg { display:block; width:24px; height:24px; fill:currentColor; }
+        .list-menu-anchor { position:relative; }
+        .list-menu { position:absolute; top:calc(100% + 4px); inset-inline-end:0; z-index:3; box-sizing:border-box; width:min(340px,calc(100vw - 64px)); max-height:min(70dvh,640px); overflow:auto; padding:12px; border:1px solid var(--divider-color); border-radius:8px; background:var(--card-background-color); box-shadow:var(--ha-card-box-shadow,0 6px 18px rgba(0,0,0,.22)); }
+        .list-menu .list-actions { margin-top:0; }
+        .list-menu.above { top:auto; bottom:calc(100% + 4px); }
+        .list-menu > button { min-height:44px; padding:8px; font:inherit; color:inherit; background:var(--secondary-background-color); border:1px solid var(--divider-color); border-radius:6px; margin-top:8px; cursor:pointer; }
         .list-actions { display:flex; flex-wrap:wrap; gap:var(--ha-space-2,8px); margin-top:var(--ha-space-3,12px); }
         .list-actions button, .list-form button, .pending-lists button { min-height:44px; font:inherit; padding:var(--ha-space-2,8px); color:var(--primary-text-color); background:var(--secondary-background-color); border:1px solid var(--divider-color); border-radius:var(--ha-border-radius-md,6px); }
         .list-actions .delete-action, .list-form .delete-action { color:var(--error-color); }
@@ -753,7 +846,7 @@ class HaListsPanel extends HTMLElement {
         .list-form p { flex-basis:100%; overflow-wrap:anywhere; }
         .list-pane > p, .pending-lists p { overflow-wrap:anywhere; }
         nav button { display:block; width:100%; border:0; border-radius:8px; background:transparent; color:inherit; text-align:left; font:inherit; padding:12px; cursor:pointer; overflow-wrap:anywhere; }
-        nav button[aria-current=true] { background:var(--secondary-background-color); font-weight:600; }
+        nav button[aria-current=true] { background:var(--secondary-background-color); }
         button:focus-visible, select:focus-visible, input:focus-visible { outline:2px solid var(--primary-color); }
         .search { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin:12px 0; }
         .search label { display:grid; gap:4px; flex:1; min-width:0; }
@@ -763,7 +856,10 @@ class HaListsPanel extends HTMLElement {
         .task-tools button { min-height:44px; padding:8px 12px; font:inherit; color:inherit; background:var(--secondary-background-color); border:1px solid var(--divider-color); border-radius:6px; cursor:pointer; }
         .task-tools svg { width:22px; height:22px; display:block; fill:currentColor; }
         .view-options { padding:12px; border:1px solid var(--divider-color); border-radius:6px; margin:12px 0; }
-        .suggestions { margin:-8px 0 12px; border:1px solid var(--divider-color); border-radius:6px; background:var(--card-background-color); }
+        .entry-field { position:relative; flex:1; min-width:0; isolation:isolate; }
+        .entry-field ha-input { display:block; width:100%; }
+        .suggestions { position:absolute; top:calc(100% + 4px); inset-inline:0; z-index:2; margin:0; overflow-y:auto; overscroll-behavior:contain; border:1px solid var(--divider-color); border-radius:8px; background:var(--card-background-color); color:var(--primary-text-color); box-shadow:var(--ha-card-box-shadow,0 6px 18px rgba(0,0,0,.22)); }
+        .suggestions.above { top:auto; bottom:calc(100% + 4px); }
         .suggestions [role=option] { min-height:44px; display:flex; align-items:center; padding:0 12px; overflow-wrap:anywhere; cursor:pointer; }
         .suggestions [aria-selected=true] { background:var(--secondary-background-color); outline:2px solid var(--primary-color); outline-offset:-2px; }
         .suggestion-history { border-top:1px solid var(--divider-color); margin-top:12px; padding-top:12px; }
@@ -952,6 +1048,7 @@ class HaListsPanel extends HTMLElement {
       this._taskTools = document.createElement("div");
       this._taskTools.className = "task-tools";
       this._searchToggle = actionButton("", () => {
+        this._listMenuOpen = false;
         this._searchOpen = !this._searchOpen || Boolean(this._search.trim());
         this.render();
         if (this._searchOpen) this._searchInput.focus();
@@ -1057,7 +1154,7 @@ class HaListsPanel extends HTMLElement {
       this._filters.append(filterLabel, sortLabel);
       this._viewSummary = document.createElement("span");
       this._viewSummary.className = "muted";
-      this._taskTools.append(this._searchToggle, this._viewToggle, this._viewSummary, this._filterCount);
+      this._taskTools.append(this._viewSummary, this._filterCount);
       this._sortHelp = document.createElement("p");
       this._sortHelp.id = "task-sort-help";
       this._sortHelp.className = "filter-help muted";
@@ -1107,6 +1204,44 @@ class HaListsPanel extends HTMLElement {
         actionButton("Clear learned history", () => askHistory("clear")),
         actionButton("Rebuild from completed items", () => askHistory("rebuild")), this._historyConfirm, this._historyError);
       this._viewOptions.append(this._historyPanel);
+      this._listMenuAnchor = document.createElement("div");
+      this._listMenuAnchor.className = "list-menu-anchor";
+      this._listMenuToggle = actionButton("", () => {
+        this._listMenuOpen = !this._listMenuOpen;
+        this.renderListMenu();
+        if (this._listMenuOpen) this._listMenu.scrollTop = 0;
+        if (this._listMenuOpen && this._viewOpen) this.loadSuggestionHistory();
+      });
+      this._listMenuToggle.setAttribute("aria-label", "List menu");
+      this._listMenuToggle.title = "List menu";
+      this._listMenuToggle.setAttribute("aria-controls", "list-menu");
+      const listMenuIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      listMenuIcon.setAttribute("viewBox", "0 0 24 24");
+      listMenuIcon.setAttribute("aria-hidden", "true");
+      const listMenuPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      listMenuPath.setAttribute("d", "M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z");
+      listMenuIcon.append(listMenuPath);
+      this._listMenuToggle.append(listMenuIcon);
+      this._listMenu = document.createElement("section");
+      this._listMenu.id = "list-menu";
+      this._listMenu.className = "list-menu";
+      this._listMenu.setAttribute("aria-label", "List actions and view options");
+      this._listMenu.append(this._selectedListActions, this._viewToggle, this._viewOptions);
+      this._listMenuAnchor.append(this._listMenuToggle, this._listMenu);
+      this._listMenu.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !event.defaultPrevented) {
+          event.preventDefault();
+          this._listMenuOpen = false;
+          this.renderListMenu();
+          this._listMenuToggle.focus();
+        }
+      });
+      this._listHeading = document.createElement("div");
+      this._listHeading.className = "list-heading";
+      this._headingActions = document.createElement("div");
+      this._headingActions.className = "heading-actions";
+      this._headingActions.append(this._searchToggle, this._listMenuAnchor);
+      this._listHeading.append(this._heading, this._headingActions);
       this._form = document.createElement("form");
       // Use Home Assistant's native input component for companion-app focus handling.
       // ha-input superseded ha-textfield in HA 2026.4.
@@ -1171,13 +1306,16 @@ class HaListsPanel extends HTMLElement {
         this._draft = this._input.value;
         this.addItem();
       });
-      this._form.append(this._input, this._submit);
+      this._entryField = document.createElement("div");
+      this._entryField.className = "entry-field";
       this._suggestionList = document.createElement("div");
       this._suggestionList.id = "task-suggestions";
       this._suggestionList.className = "suggestions";
       this._suggestionList.setAttribute("role", "listbox");
       this._suggestionList.setAttribute("aria-label", "Task suggestions");
       this._suggestionList.hidden = true;
+      this._entryField.append(this._input, this._suggestionList);
+      this._form.append(this._entryField, this._submit);
       this._suggestionAnnouncement = document.createElement("span");
       this._suggestionAnnouncement.className = "sr-only";
       this._suggestionAnnouncement.setAttribute("aria-live", "polite");
@@ -1259,7 +1397,7 @@ class HaListsPanel extends HTMLElement {
       this._editError = document.createElement("p");
       this._editError.className = "error";
       this._editError.setAttribute("role", "alert");
-      article.append(this._heading, this._selectedListActions, this._taskTools, this._searchControls, this._viewOptions, this._form, this._suggestionList, this._suggestionAnnouncement, this._editForm, this._editError, this._results);
+      article.append(this._listHeading, this._taskTools, this._searchControls, this._form, this._suggestionAnnouncement, this._editForm, this._editError, this._results);
       layout.append(listPane, article);
       this._main.append(layout);
       this.shadowRoot.replaceChildren(style, header, this._main);
@@ -1276,6 +1414,7 @@ class HaListsPanel extends HTMLElement {
       button.setAttribute("aria-current", String(entity.entity_id === this._selected));
       button.addEventListener("click", () => {
         if (this._selected !== entity.entity_id) this._edit = null;
+        this._listMenuOpen = false;
         this._selected = entity.entity_id;
         this.loadItems();
       });
@@ -1289,6 +1428,8 @@ class HaListsPanel extends HTMLElement {
     }
     this._nav.replaceChildren(...navChildren);
     this.renderListManagement();
+    this.renderListMenu();
+    this._headingActions.hidden = !selected;
     this._heading.textContent = selected?.attributes?.friendly_name || "Select a list";
     this._clearSearch.disabled = !this._search;
     this._form.hidden = !selected;

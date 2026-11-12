@@ -102,7 +102,7 @@ by default. Matching ignores case/Unicode width/repeated spaces, prefers exact
 and prefix matches, then frequency and recency. Selecting a suggestion creates
 a new native task; it does not reopen an old task or copy old dates/notes.
 
-Administrators can open **View options → Suggestion history** to search learned
+Administrators can open **List menu → View options → Suggestion history** to search learned
 labels, forget one, disable learning, change active-item exclusion, clear history,
 or rebuild from currently available completed tasks. Clear/rebuild ask for
 confirmation and never modify native tasks. History is shared, so these settings
@@ -158,8 +158,20 @@ The task toolbar starts compact. Tap the magnifying glass to expand **Search
 tasks**; an empty search collapses when you leave it or press Escape. An active
 query stays visible so you can see why tasks are filtered. **Clear search** keeps
 focus in the field. Open **View options** for the Show tasks and Sort active tasks
-selectors; close it with its button or Escape. Counts and a short summary of
+selectors inside the top-right **List menu**; close it with its button or Escape. Counts and a short summary of
 non-default view choices remain visible when the options are closed.
+
+The top-right list menu also holds **Remove list from panel** and **Delete list…**
+for administrators. The search icon sits beside it. The list-name section keeps
+its own size when you switch lists; it does not stretch with the task pane.
+Autocomplete floats over the task UI, retains its previous results while the next
+query loads, and does not move the task rows. It can open upward when needed.
+
+If an older autocomplete version missed items that were active when history
+first initialized, use **List menu → View options → Suggestion history → Rebuild
+from completed items** after updating. This changes suggestions, not native tasks.
+New baselines now learn those tasks once when they are first completed. Clearing,
+forgetting, or disabling learning cancels the corresponding pending eligibility.
 
 Use **Search tasks** to find a literal substring in task titles or descriptions
 in the selected list. Matching ignores case and surrounding spaces, and combines

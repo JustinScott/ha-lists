@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { selectTaskView } from "./panel-controls.mjs";
 
 export async function verifyTaskSearch({ page, base, token, post, entityId, listName, secondName }) {
   await post(base, "/api/services/todo/add_item", {
@@ -15,9 +16,9 @@ export async function verifyTaskSearch({ page, base, token, post, entityId, list
   assert.equal(await search.inputValue(), "  VIOLET  ");
   await search.press("Enter");
   assert.equal(await quickAdd.inputValue(), "Unsent search draft");
-  await page.getByRole("combobox", { name: "Show tasks", exact: true }).selectOption("completed");
+  await selectTaskView(page, "Show tasks", "completed");
   await page.getByText("No tasks match your search and filter.", { exact: true }).waitFor();
-  await page.getByRole("combobox", { name: "Show tasks", exact: true }).selectOption("all");
+  await selectTaskView(page, "Show tasks", "all");
   await page.getByRole("button", { name: secondName, exact: true }).click();
   await page.getByText("No tasks match your search and filter.", { exact: true }).waitFor();
   assert.equal(await search.inputValue(), "  VIOLET  ");

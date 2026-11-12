@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { clickListAction, closeListMenu, openListMenu } from "./panel-controls.mjs";
 
 export async function verifyCompactControls(page) {
   const searchButton = page.getByRole("button", { name: "Search tasks", exact: true });
@@ -15,6 +16,7 @@ export async function verifyCompactControls(page) {
   await searchButton.press("Enter");
   assert.ok(await search.evaluate((input) => input.getRootNode().activeElement === input));
   await search.fill("Synthetic search");
+  await openListMenu(page);
   await view.focus();
   assert.equal(await search.inputValue(), "Synthetic search");
   await view.press("Space");
@@ -29,6 +31,7 @@ export async function verifyCompactControls(page) {
   await page.keyboard.press("Escape");
   assert.equal(await view.getAttribute("aria-expanded"), "false");
   assert.ok(await view.evaluate((button) => button.getRootNode().activeElement === button));
+  await closeListMenu(page);
   await page.getByRole("button", { name: "Clear search", exact: true }).click();
   await search.press("Escape");
   assert.equal(await search.count(), 0);
@@ -36,11 +39,10 @@ export async function verifyCompactControls(page) {
   if (process.env.HA_LISTS_SCREENSHOT_DIR) {
     await mkdir(process.env.HA_LISTS_SCREENSHOT_DIR, { recursive: true });
     await page.screenshot({ path: join(process.env.HA_LISTS_SCREENSHOT_DIR, "compact-mobile.png"), fullPage: true });
-    await view.click();
+    await clickListAction(page, "View options");
     await searchButton.click();
     await page.screenshot({ path: join(process.env.HA_LISTS_SCREENSHOT_DIR, "expanded-mobile.png"), fullPage: true });
     await search.press("Escape");
-    await view.click();
   }
   await quickAdd.fill("");
   console.log("Verified compact defaults, accessible disclosures, active-query visibility, keyboard closing and task draft retention");

@@ -80,7 +80,7 @@ async function setup({ lists = ["todo.groceries"], items = [], service, readItem
 function rows(panel) { return [...panel.shadowRoot.querySelectorAll("li")]; }
 function search(window, panel, value) {
   if (panel._searchControls.hidden) panel._searchToggle.click();
-  const input = panel.shadowRoot.querySelector('input[type="search"]');
+  const input = panel._searchInput;
   input.value = value;
   input.dispatchEvent(new window.Event("input", { bubbles: true }));
   return input;
@@ -96,7 +96,7 @@ test("compact controls start collapsed, preserve active choices and close by key
   assert.equal(panel._viewToggle.getAttribute("aria-expanded"), "true");
   selectFilter(window, panel, "active");
   selectSort(window, panel, "oldest");
-  panel._sortSelect.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  panel._sortSelect.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
   assert.equal(panel._viewOptions.hidden, true);
   assert.equal(panel.shadowRoot.activeElement, panel._viewToggle);
   assert.equal(panel._viewSummary.textContent, "Active · Oldest first");
@@ -171,6 +171,58 @@ test("autocomplete debounces, safely renders labels, and adds only an explicitly
   window.close();
 });
 
+test("floating suggestions keep their results visible while a newer query is pending", async () => {
+  const newer = deferred();
+  let first = true;
+  const { panel, window, calls } = await setup({ suggestions: () => {
+    if (first) { first = false; return { suggestions: ["Milk", "Milkshake"] }; }
+    return newer.promise;
+  } });
+  draft(window, panel, "mi");
+  await suggestionTick();
+  const popup = panel._suggestionList;
+  const option = popup.firstChild;
+  entryKey(window, panel, "ArrowDown");
+  draft(window, panel, "mil");
+  assert.equal(popup.hidden, false);
+  assert.equal(popup.firstChild, option);
+  assert.equal(popup.getAttribute("aria-busy"), "true");
+  assert.equal(panel._suggestionIndex, -1);
+  await suggestionTick();
+  assert.equal(popup.hidden, false);
+  newer.resolve({ suggestions: ["Milk"] });
+  await tick();
+  assert.equal(panel._suggestionList, popup);
+  assert.equal(popup.hidden, false);
+  assert.equal(popup.getAttribute("aria-busy"), "false");
+  assert.equal(calls.length, 0);
+  window.close();
+});
+
+test("list actions are disclosed from the heading menu with keyboard close and retained drafts", async () => {
+  const { panel, window } = await setup({ management: { available: [], deletable: {}, pending: [] } });
+  draft(window, panel, "Unsent menu draft");
+  assert.equal(panel._listMenu.hidden, true);
+  assert.equal(panel._headingActions.contains(panel._searchToggle), true);
+  panel._listMenuToggle.click();
+  assert.equal(panel._listMenu.hidden, false);
+  assert.equal(panel._listMenu.contains(panel._hideListButton), true);
+  assert.equal(panel._listMenu.contains(panel._viewToggle), true);
+  panel._listMenu.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+  assert.equal(panel._listMenu.hidden, true);
+  assert.equal(panel.shadowRoot.activeElement, panel._listMenuToggle);
+  assert.equal(panel._input.value, "Unsent menu draft");
+  panel._listMenuToggle.click();
+  panel._input.tabIndex = 0;
+  panel._input.focus();
+  assert.equal(panel._listMenu.hidden, true, "keyboard focus outside the menu closes it");
+  panel._listMenuToggle.click();
+  panel._searchToggle.click();
+  assert.equal(panel._listMenu.hidden, true);
+  assert.equal(panel.shadowRoot.activeElement, panel._searchInput);
+  window.close();
+});
+
 test("autocomplete preserves free text and Escape/IME do not add unintended tasks", async () => {
   const { panel, window, calls } = await setup({ suggestions: () => ({ suggestions: ["Milk", "Milkshake"] }) });
   draft(window, panel, "mi");
@@ -231,6 +283,7 @@ test("shared history controls confirm clear, preserve native tasks and report ma
     suggestions: () => ({ suggestions: ["Milk"], learning: true, exclude_active: true, count: 1 }),
     manageSuggestions: (request) => { managed.push(request); if (request.action === "forget") throw Error("Synthetic history failure"); return {}; },
   });
+  panel._listMenuToggle.click();
   panel._viewToggle.click();
   await tick();
   assert.equal(panel._historyPanel.hidden, false);

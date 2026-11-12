@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { openViewOptions, selectTaskView } from "./panel-controls.mjs";
 
 export async function verifyTaskFilters({ browser, page, base, token, username, password, post, openPanel, entityId }) {
   const now = new Date("2030-01-06T00:30:00Z");
@@ -21,9 +22,7 @@ export async function verifyTaskFilters({ browser, page, base, token, username, 
   await page.getByRole("checkbox", { name: "Reopen Filter completed", exact: true }).waitFor();
 
   const choose = async (target, filter, expected) => {
-    const options = target.getByRole("button", { name: "View options", exact: true });
-    if (await options.getAttribute("aria-expanded") !== "true") await options.click();
-    await target.getByRole("combobox", { name: "Show tasks", exact: true }).selectOption(filter);
+    await selectTaskView(target, "Show tasks", filter);
     const panel = await target.locator("ha-lists-panel").elementHandle();
     try {
       const snapshot = await target.waitForFunction(({ panel, expected }) => {
@@ -51,6 +50,7 @@ export async function verifyTaskFilters({ browser, page, base, token, username, 
   await page.getByRole("checkbox", { name: "Reopen Filter today", exact: true }).click();
   await page.getByRole("button", { name: "Rename Filter today", exact: true }).waitFor({ state: "detached" });
   await choose(page, "today", ["Filter today", "Filter timed past", "Filter timed future"]);
+  await openViewOptions(page);
   await page.getByText("Unfinished tasks due today. Time zone: America/Chicago", { exact: true }).waitFor();
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   const select = page.getByRole("combobox", { name: "Show tasks", exact: true });
@@ -67,6 +67,7 @@ export async function verifyTaskFilters({ browser, page, base, token, username, 
   try {
     await other.getByRole("button", { name: "Rename Filter tomorrow", exact: true }).waitFor();
     await choose(other, "today", ["Filter tomorrow", "Filter timed past", "Filter timed future"]);
+    await openViewOptions(other);
     await other.getByText("Unfinished tasks due today. Time zone: Pacific/Kiritimati", { exact: true }).waitFor();
     await choose(other, "overdue", ["Filter yesterday", "Filter today", "Filter timed past"]);
     if (process.env.HA_LISTS_SCREENSHOT_DIR) {
@@ -80,8 +81,6 @@ export async function verifyTaskFilters({ browser, page, base, token, username, 
     await other.close();
   }
   await page.clock.setFixedTime(new Date());
-  const options = page.getByRole("button", { name: "View options", exact: true });
-  if (await options.getAttribute("aria-expanded") !== "true") await options.click();
-  await page.getByRole("combobox", { name: "Show tasks", exact: true }).selectOption("all");
+  await selectTaskView(page, "Show tasks", "all");
   console.log("Verified all five filters, keyboard selection, completion/reopening, and different user time zones");
 }

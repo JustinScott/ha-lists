@@ -151,6 +151,124 @@ async def test_observation_active_exclusion_rankings_and_controls(
     assert normalized("  ＭＩＬＫ\t Carton ") == "milk carton"
 
 
+async def test_existing_active_item_is_learned_on_first_completion(
+    hass: HomeAssistant,
+    owner_socket: ClientWebSocketResponse,
+) -> None:
+    native = await hass.config_entries.flow.async_init(
+        "local_todo",
+        context={"source": "user"},
+        data={"todo_list_name": "Existing task sample"},
+    )
+    entity = er.async_entries_for_config_entry(
+        er.async_get(hass), native["result"].entry_id
+    )[0].entity_id
+    await add(hass, entity, "Baseline sample")
+    await request(
+        owner_socket, type="ha_lists/list/visibility", entity_id=entity, visible=True
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert (await query(owner_socket, entity, "baseline"))["count"] == 0
+    item = (await tasks(hass, entity))[0]
+    await hass.services.async_call(
+        "todo",
+        "update_item",
+        {"entity_id": entity, "item": item["uid"], "status": "completed"},
+        blocking=True,
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert (await query(owner_socket, entity, "baseline"))["suggestions"] == [
+        "Baseline sample"
+    ]
+    catalog = hass.data[CATALOG]
+    await catalog.refresh(entity)
+    assert (
+        catalog.data[catalog.bindings[entity]]["labels"]["baseline sample"]["count"]
+        == 1
+    )
+
+
+@pytest.mark.parametrize(
+    ("action", "extra"),
+    [
+        ("clear", {}),
+        ("forget", {"value": "Baseline sample"}),
+        ("learning", {"value": False}),
+    ],
+)
+async def test_history_controls_do_not_relearn_baseline_items_on_completion(
+    hass: HomeAssistant,
+    owner_socket: ClientWebSocketResponse,
+    action: str,
+    extra: dict,
+) -> None:
+    native = await hass.config_entries.flow.async_init(
+        "local_todo",
+        context={"source": "user"},
+        data={"todo_list_name": "Baseline control sample"},
+    )
+    entity = er.async_entries_for_config_entry(
+        er.async_get(hass), native["result"].entry_id
+    )[0].entity_id
+    await add(hass, entity, "Baseline sample")
+    first = (await tasks(hass, entity))[0]
+    await hass.services.async_call(
+        "todo",
+        "update_item",
+        {"entity_id": entity, "item": first["uid"], "status": "completed"},
+        blocking=True,
+    )
+    await add(hass, entity, "Baseline sample")
+    await request(
+        owner_socket, type="ha_lists/list/visibility", entity_id=entity, visible=True
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert (await query(owner_socket, entity, "", history=True))["suggestions"] == [
+        "Baseline sample"
+    ]
+    assert (await manage(owner_socket, entity, action, **extra))["success"]
+    catalog = hass.data[CATALOG]
+    key = catalog.bindings[entity]
+    expected = catalog.data[key]["labels"].copy()
+    active = next(
+        item for item in await tasks(hass, entity) if item["status"] != "completed"
+    )
+    await hass.services.async_call(
+        "todo",
+        "update_item",
+        {"entity_id": entity, "item": active["uid"], "status": "completed"},
+        blocking=True,
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+    await manage(owner_socket, entity, "learning", value=True)
+    assert catalog.data[key]["labels"] == expected
+
+
+async def test_legacy_seen_markers_are_preserved_until_explicit_rebuild(
+    hass: HomeAssistant,
+    owner_socket: ClientWebSocketResponse,
+) -> None:
+    entity = await create(owner_socket, hass)
+    await add(hass, entity, "Legacy sample")
+    catalog = hass.data[CATALOG]
+    record = catalog.data[catalog.bindings[entity]]
+    record["labels"] = {}
+    record.pop("baseline_active")
+    item = (await tasks(hass, entity))[0]
+    await hass.services.async_call(
+        "todo",
+        "update_item",
+        {"entity_id": entity, "item": item["uid"], "status": "completed"},
+        blocking=True,
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert (await query(owner_socket, entity, "legacy"))["suggestions"] == []
+    assert (await manage(owner_socket, entity, "rebuild"))["success"]
+    assert (await query(owner_socket, entity, "legacy"))["suggestions"] == [
+        "Legacy sample"
+    ]
+
+
 @pytest.mark.parametrize(
     "payload",
     [
@@ -272,6 +390,7 @@ async def test_catalog_and_seen_uids_survive_real_restart(tmp_path: Path) -> Non
         entity = er.async_entries_for_config_entry(
             er.async_get(first), native.entry_id
         )[0].entity_id
+        await add(first, entity, "Earlier active sample")
         first.config_entries.async_update_entry(app, options={"lists": [entity]})
         await first.async_block_till_done(wait_background_tasks=True)
         await add(first, entity, "Restart milk")
@@ -287,6 +406,21 @@ async def test_catalog_and_seen_uids_survive_real_restart(tmp_path: Path) -> Non
         assert restored.query(entity, "milk") == before
         key = restored.bindings[entity]
         assert restored.data[key]["labels"]["restart milk"]["count"] == 1
+        earlier = next(
+            item
+            for item in await tasks(restarted, entity)
+            if item["summary"] == "Earlier active sample"
+        )
+        await restarted.services.async_call(
+            "todo",
+            "update_item",
+            {"entity_id": entity, "item": earlier["uid"], "status": "completed"},
+            blocking=True,
+        )
+        await restarted.async_block_till_done(wait_background_tasks=True)
+        assert restored.query(entity, "Earlier")["suggestions"] == [
+            "Earlier active sample"
+        ]
 
 
 async def test_same_count_reports_reconcile_active_titles_and_native_deletion(

@@ -1,3 +1,4 @@
+import { clickListAction } from "./panel-controls.mjs";
 import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
@@ -52,7 +53,7 @@ export async function verifyListManagement({ browser, page, native, base, token,
     await choose(name);
   };
   const remove = async (name) => {
-    await page.getByRole("button", { name: "Delete list…", exact: true }).click();
+    await clickListAction(page, "Delete list…");
     assert.ok(await page.getByRole("button", { name: "Keep list", exact: true }).evaluate((button) => button.getRootNode().activeElement === button));
     const confirmation = page.getByRole("textbox", { name: "Type the list name to delete", exact: true });
     const submit = page.getByRole("button", { name: "Delete list and all tasks", exact: true });
@@ -65,6 +66,18 @@ export async function verifyListManagement({ browser, page, native, base, token,
     await listButton(observer, name).waitFor({ state: "detached" });
   };
   try {
+    const previousViewport = page.viewportSize();
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const firstName = await page.locator("ha-lists-panel nav button").first().innerText();
+    const secondName = await page.locator("ha-lists-panel nav button").nth(1).innerText();
+    await choose(firstName);
+    const paneBefore = await page.locator("ha-lists-panel .list-pane").boundingBox();
+    await choose(secondName);
+    const paneAfter = await page.locator("ha-lists-panel .list-pane").boundingBox();
+    assert.ok(Math.abs(paneAfter.height - paneBefore.height) <= 1, "list selector height must not follow the task panel");
+    assert.ok(Math.abs(paneAfter.width - paneBefore.width) <= 1);
+    await choose(firstName);
+    await page.setViewportSize(previousViewport);
     const original = await items(entityId);
     const alpha = "UI alpha list";
     const beta = "UI beta list";
@@ -85,7 +98,7 @@ export async function verifyListManagement({ browser, page, native, base, token,
     await page.getByRole("button", { name: "Rename Beta task", exact: true }).waitFor();
     const betaTasks = await items(betaId);
     await choose(alpha);
-    await page.getByRole("button", { name: "Remove list from panel", exact: true }).click();
+    await clickListAction(page, "Remove list from panel");
     await listButton(observer, alpha).waitFor({ state: "detached" });
     assert.deepEqual(await items(alphaId), alphaTasks);
     await page.getByRole("button", { name: "New list", exact: true }).click();
@@ -96,7 +109,7 @@ export async function verifyListManagement({ browser, page, native, base, token,
     await page.getByRole("button", { name: "Cancel new list", exact: true }).click();
     await connect(alphaId, alpha);
     assert.deepEqual(await items(alphaId), alphaTasks);
-    await page.getByRole("button", { name: "Delete list…", exact: true }).click();
+    await clickListAction(page, "Delete list…");
     await page.getByRole("button", { name: "Keep list", exact: true }).click();
     assert.deepEqual(await items(alphaId), alphaTasks);
     await remove(alpha);

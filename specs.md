@@ -63,16 +63,20 @@ Build a free, local-first, application-style list manager integrated into Home A
   bindings retain task behavior but gain no new history/import/export workflow.
   No cloud, AI, Recorder-history dependency or browser-local catalog is required.
 - Seed currently available completed items on the first successful snapshot.
-  Baseline existing active UIDs without learning their titles. Subsequently learn
+  Baseline existing active UIDs without learning their titles immediately; persist
+  their eligibility to learn once on first completion. Subsequently learn
   first-observed UIDs from native snapshots, including native UI, Assist and
-  automation additions while the panel is closed. Reopening or renaming an
-  already-observed UID does not increase frequency. Rebuild reflects the current
+  automation additions while the panel is closed. Once a UID has taught a title,
+  reopening or renaming it does not increase frequency. Rebuild reflects the current
   completed titles. Missing/deleted history and tasks created/deleted between
   observations cannot be reconstructed; this is not a purchase/audit history.
 - Use HA-managed Store schema 1, keyed by the native Local To-do config-entry
   identity (independent of entity ID/name/registry recreation). Store normalized
   and display labels, first-observed occurrence counts, last-observed timestamp,
-  source, learning/exclusion settings and a UID deduplication ledger. Preserve
+  source, learning/exclusion settings, a UID deduplication ledger and optional
+  `baseline_active` UID eligibility. Old records without eligibility preserve
+  their seen/forgotten markers; use explicit Rebuild to recover previously missed
+  completed titles without silently restoring intentionally cleared history. Preserve
   data across restart, reload and hiding; remove orphaned history on subsequent
   reconciliation/startup after native list deletion. Removing HA Lists deletes
   its own catalog, leaving native lists/tasks intact.
@@ -87,8 +91,15 @@ Build a free, local-first, application-style list manager integrated into Home A
   cached history only, never native tasks. Cap each catalog at 2,000 labels
   (evict least-recent labels) and 50,000 observed UIDs; at the UID cap pause
   further learning and report capacity, preserving existing suggestions.
-- Suggestions appear directly below the existing quick-entry field after
-  nonempty typing, debounced 150 ms. Nothing is initially highlighted. Arrow
+- Suggestions float above the task UI in a themed, shadowed popup anchored to
+  quick entry, without changing task-row positions. Prefer below the input;
+  place above when viewport space is limited, constrain height and allow scrolling.
+  Reposition on page/visual-viewport resize/scroll and remove listeners on
+  disconnect. Nonempty typing is debounced 150 ms; retain the previous results
+  and popup while new results load (`aria-busy`), then replace results in place.
+  Do not clear the popup on each letter or same-list native refresh. A real
+  no-match result, blank entry, blur, Escape or selection/list change can dismiss
+  it. Nothing is initially highlighted; changing the query resets selection. Arrow
   Down/Up selects an option; Enter on a selected option or tapping it adds a
   **new** native task with only that title. With no selection Enter/Add uses the
   literal draft. Escape dismisses without clearing the draft. Avoid IME/repeat
@@ -102,7 +113,7 @@ Build a free, local-first, application-style list manager integrated into Home A
   Native task permissions still govern all additions. Query/history endpoints
   require authentication, current selection and native list read permission.
   Administrative history queries and mutations require an administrator.
-- Under View options provide searchable learned labels (20 results maximum),
+- Under List menu → View options provide searchable learned labels (20 results maximum),
   individual Forget, learning/exclude-active toggles, and confirmed Clear history
   and Rebuild from available completed items. These affect shared history only,
   never native tasks. Clearing/forgetting retains seen UIDs so unchanged old
@@ -319,6 +330,25 @@ other todo entities
   simultaneous users' time-zone views with synthetic tasks.
 
 ### Task search
+
+- List-panel actions (2026-11-12): place the search icon beside a List menu icon
+  at the top-right of the selected list heading. The menu contains administrator
+  Remove list from panel/Delete list controls and the existing View options
+  disclosure, including history controls. Respect existing permissions and
+  confirmations. Use a labelled native disclosure button, `aria-expanded` and
+  `aria-controls`; keep native form controls out of ARIA menu roles. Escape
+  closes the current disclosure and returns focus to its trigger; clicking or
+  moving focus outside, or switching lists, closes the list menu. Search expands below the
+  heading with the existing focus/query behavior. The native HA sidebar button
+  remains separate in the top-left shell header. Constrain floating controls
+  to available viewport space without stealing input focus.
+- The left list selector must retain its width/height when switching between
+  lists with different task counts. Do not stretch it to the right panel's
+  content height or change name wrapping with selected font weight. Explicit
+  list creation/connection/confirmation content may expand its own section.
+  Verify actual desktop geometry across list switches and keyboard/touch menu
+  actions, stable task geometry and no popup-hidden flicker while typing in
+  installed-HA browser tests, in addition to panel race/focus regressions.
 
 - Compact presentation (2026-11-11): search starts collapsed behind an accessible
   magnifying-glass button. Activating it expands the labelled field and Clear

@@ -1,3 +1,4 @@
+import { clickListAction, openViewOptions } from "./panel-controls.mjs";
 import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
@@ -16,7 +17,7 @@ export async function verifySuggestions({ browser, page, base, token, post, open
     await post(base, "/api/services/todo/update_item", { entity_id: entityId, item: item.uid, status: "completed" }, token);
   };
   for (const title of ["Catalog milk", "Catalog milkshake", "Catalog almond milk"]) await completed(title);
-  const seeded = await tasks();
+  await post(base, "/api/services/todo/add_item", { entity_id: entityId, item: "Catalog baseline" }, token);
   await page.getByRole("button", { name: "Connect existing list", exact: true }).click();
   await page.getByRole("combobox", { name: "Existing Local To-do list", exact: true }).selectOption(entityId);
   await page.getByRole("button", { name: "Show list", exact: true }).click();
@@ -24,8 +25,26 @@ export async function verifySuggestions({ browser, page, base, token, post, open
   await page.getByRole("button", { name: "Rename Catalog milk", exact: true }).waitFor();
   const input = page.locator('ha-lists-panel ha-input[label="Add a task"] input');
   const options = page.getByRole("listbox", { name: "Task suggestions", exact: true });
+  await page.getByRole("checkbox", { name: "Complete Catalog baseline", exact: true }).click();
+  await input.fill("Catalog baseline");
+  await options.getByRole("option", { name: "Catalog baseline", exact: true }).waitFor();
+  await input.press("Escape");
+  const seeded = await tasks();
+  const row = page.getByRole("button", { name: "Rename Catalog milk", exact: true });
+  const relativeRowBefore = (await row.boundingBox()).y - (await input.boundingBox()).y;
   await input.fill("Catalog milk");
   await options.getByRole("option", { name: "Catalog milk", exact: true }).waitFor();
+  const popup = await options.elementHandle();
+  await options.evaluate((node) => {
+    window.suggestionFlickers = 0;
+    new MutationObserver(() => { if (node.hidden) window.suggestionFlickers++; }).observe(node, { attributes: true, attributeFilter: ["hidden"] });
+  });
+  await input.press("Backspace");
+  await input.type("k");
+  await page.waitForFunction((node) => node.getAttribute("aria-busy") === "false", popup);
+  assert.equal(await page.evaluate(() => window.suggestionFlickers), 0);
+  assert.ok(Math.abs((await row.boundingBox()).y - (await input.boundingBox()).y - relativeRowBefore) <= 1,
+    "suggestions must float without pushing task rows down");
   assert.equal(await input.getAttribute("aria-expanded"), "true");
   assert.equal(await input.evaluate((node) => node.ariaControlsElements?.[0]?.getAttribute("aria-label")), "Task suggestions");
   await input.press("ArrowDown");
@@ -68,7 +87,7 @@ export async function verifySuggestions({ browser, page, base, token, post, open
     const otherInput = observer.locator('ha-lists-panel ha-input[label="Add a task"] input');
     await otherInput.fill("Catalog auto");
     await observer.getByRole("option", { name: "Catalog automation", exact: true }).waitFor();
-    await page.getByRole("button", { name: "View options", exact: true }).click();
+    await clickListAction(page, "View options");
     await page.getByRole("heading", { name: "Suggestion history", exact: true }).waitFor();
     const historySearch = page.getByRole("searchbox", { name: "Find a learned suggestion", exact: true });
     await historySearch.fill("Catalog automation");
@@ -79,6 +98,7 @@ export async function verifySuggestions({ browser, page, base, token, post, open
     await input.press("Escape");
     assert.equal(await page.getByRole("option", { name: "Catalog automation", exact: true }).count(), 0);
     const nativeBefore = await tasks();
+    await openViewOptions(page);
     await page.getByRole("button", { name: "Clear learned history", exact: true }).click();
     await page.getByRole("button", { name: "Confirm history change", exact: true }).click();
     await page.getByText("0 learned suggestions. Shared on this Home Assistant server.", { exact: true }).waitFor();
@@ -90,7 +110,7 @@ export async function verifySuggestions({ browser, page, base, token, post, open
       await mkdir(process.env.HA_LISTS_SCREENSHOT_DIR, { recursive: true });
       await page.screenshot({ path: join(process.env.HA_LISTS_SCREENSHOT_DIR, "suggestion-history-mobile.png"), fullPage: true });
     }
-    await page.getByRole("button", { name: "View options", exact: true }).click();
+    await clickListAction(page, "View options");
     await input.fill("Catalog auto");
     await options.getByRole("option", { name: "Catalog automation", exact: true }).waitFor();
     if (process.env.HA_LISTS_SCREENSHOT_DIR) {

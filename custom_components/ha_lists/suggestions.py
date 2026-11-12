@@ -142,7 +142,7 @@ class SuggestionCatalog:
     @callback
     def record(self, key: str) -> dict[str, Any]:
         """Get a catalog keyed by its native Local To-do config-entry identity."""
-        return self.data.setdefault(
+        record = self.data.setdefault(
             key,
             {
                 "learning": True,
@@ -150,8 +150,13 @@ class SuggestionCatalog:
                 "initialized": False,
                 "labels": {},
                 "seen": [],
+                "baseline_active": [],
             },
         )
+        # Older catalogs cannot distinguish baseline items from intentionally
+        # forgotten ones. Preserve that history; explicit Rebuild can recover it.
+        record.setdefault("baseline_active", [])
+        return record
 
     @callback
     def ingest(
@@ -168,17 +173,28 @@ class SuggestionCatalog:
         if rebuild:
             record["labels"] = {}
             record["seen"] = []
+            record["baseline_active"] = []
         seen = set(record["seen"])
+        baseline = set(record["baseline_active"])
         changed = initial
         for item in items:
             uid, title = item.get("uid"), item.get("summary")
-            if not uid or not title or uid in seen or len(seen) >= MAX_SEEN:
+            if not uid or not title:
+                continue
+            first_completion = uid in baseline and item.get("status") == "completed"
+            if uid in seen and not first_completion:
+                continue
+            if uid not in seen and len(seen) >= MAX_SEEN:
                 continue
             seen.add(uid)
+            baseline.discard(uid)
             changed = True
             if not record["learning"] and not rebuild:
                 continue
-            if (initial and item.get("status") != "completed") or len(title) > 255:
+            if initial and item.get("status") != "completed":
+                baseline.add(uid)
+                continue
+            if len(title) > 255:
                 continue
             label = normalized(title)
             if not label:
@@ -188,9 +204,10 @@ class SuggestionCatalog:
                 "label": title.strip(),
                 "count": previous["count"] + 1,
                 "last_seen": dt_util.utcnow().isoformat(),
-                "source": "completed" if initial else "observed",
+                "source": "completed" if initial or first_completion else "observed",
             }
         record["seen"] = sorted(seen)
+        record["baseline_active"] = sorted(baseline)
         record["initialized"] = True
         if len(record["labels"]) > MAX_LABELS:
             ordered = sorted(
@@ -273,10 +290,21 @@ class SuggestionCatalog:
             self.ingest(key, result[entity_id]["items"], rebuild=action == "rebuild")
         if action == "clear":
             record["labels"] = {}
+            record["baseline_active"] = []
         elif action == "forget":
             record["labels"].pop(normalized(str(value)), None)
+            ignored = {
+                item["uid"]
+                for item in result[entity_id]["items"]
+                if normalized(item.get("summary") or "") == normalized(str(value))
+            }
+            record["baseline_active"] = [
+                uid for uid in record["baseline_active"] if uid not in ignored
+            ]
         elif action in ("learning", "exclude_active"):
             record[action] = value
+            if action == "learning" and value is False:
+                record["baseline_active"] = []
         try:
             await self.store.async_save(self.data)
         except HomeAssistantError:
