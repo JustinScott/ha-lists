@@ -143,7 +143,11 @@ async function openPanel(browser, base, path, username, password, options, befor
   return page;
 }
 
-test("native To-do and HA Lists share task changes across browser sessions", { timeout: 600_000 }, async () => {
+test("native To-do and HA Lists share task changes across browser sessions", { timeout: 600_000 }, async (context) => {
+  // AbortSignal.timeout() and the test deadline are unreferenced timers. Keep
+  // setup alive until it succeeds or fails, even before Chromium is launched.
+  const lifetime = setInterval(() => {}, 1_000);
+  context.after(() => clearInterval(lifetime));
   const name = "ha-lists-test-" + randomUUID();
   let browser;
   let lists;
@@ -178,10 +182,12 @@ test("native To-do and HA Lists share task changes across browser sessions", { t
       base = `http://${stdout.trim()}/`;
     }
     await waitForHomeAssistant(base);
+    console.log("Started disposable Home Assistant");
 
     const username = "smoke-test";
     const password = randomUUID();
     const token = await configureLists(base, username, password);
+    console.log("Configured synthetic Local To-do lists");
     if (nativeRuntime) await confirmNativeHTTP(base, token);
     await verifyRejectedAuthentication(base);
 

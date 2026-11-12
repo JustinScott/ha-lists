@@ -477,8 +477,8 @@ class HaListsPanel extends HTMLElement {
     const epoch = ++this._historyEpoch;
     const entityId = this._selected;
     const connection = this._connection;
-    this._historyPanel.hidden = true;
     if (this._historyEntity !== entityId) {
+      this._historyPanel.hidden = true;
       this._historyEntity = entityId;
       this._historyConfirm.hidden = true;
       this._historyError.textContent = "";
@@ -506,7 +506,9 @@ class HaListsPanel extends HTMLElement {
         return row;
       }));
     } catch {
-      if (epoch === this._historyEpoch) this._historyPanel.hidden = true;
+      if (epoch === this._historyEpoch && !this._historyPanel.hidden) {
+        this._historyError.textContent = "Could not refresh suggestion history. Reopen View options to try again.";
+      }
     }
   }
 

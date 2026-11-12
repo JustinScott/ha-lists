@@ -234,6 +234,13 @@ test("shared history controls confirm clear, preserve native tasks and report ma
   panel._viewToggle.click();
   await tick();
   assert.equal(panel._historyPanel.hidden, false);
+  panel._historySearch.focus();
+  panel._historySearch.value = "mi";
+  panel._historySearch.dispatchEvent(new window.Event("input", { bubbles: true }));
+  assert.equal(panel._historyPanel.hidden, false, "refreshing results must not hide the focused search field");
+  assert.equal(panel.shadowRoot.activeElement, panel._historySearch);
+  await tick();
+  assert.equal(panel.shadowRoot.activeElement, panel._historySearch);
   [...panel._historyPanel.querySelectorAll("button")].find((button) => button.textContent === "Clear learned history").click();
   assert.equal(managed.length, 0);
   assert.equal(panel._historyConfirm.hidden, false);

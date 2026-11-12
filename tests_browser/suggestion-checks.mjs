@@ -72,6 +72,7 @@ export async function verifySuggestions({ browser, page, base, token, post, open
     await page.getByRole("heading", { name: "Suggestion history", exact: true }).waitFor();
     const historySearch = page.getByRole("searchbox", { name: "Find a learned suggestion", exact: true });
     await historySearch.fill("Catalog automation");
+    assert.ok(await historySearch.evaluate((node) => node.matches(":focus")));
     await page.getByRole("button", { name: "Forget suggestion Catalog automation", exact: true }).click();
     await page.getByRole("button", { name: "Forget suggestion Catalog automation", exact: true }).waitFor({ state: "detached" });
     await input.fill("Catalog auto");

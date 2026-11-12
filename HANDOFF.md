@@ -57,6 +57,14 @@
   the HA input host. Reviewed suggestion/history mobile and desktop screenshots.
   Check GitHub Validate for CI on the current commit; local success alone does
   not certify CI.
+- Follow-up review preserves the focused history-search field while fetching
+  new results; transient refresh failures leave existing controls visible.
+  The first GitHub browser run cancelled during setup when Node's event loop
+  went idle with a pending promise. The harness now owns a referenced lifetime
+  until teardown, retaining the existing timeout/assertions and logging setup
+  milestones. Node's official test/AbortSignal guidance was consulted:
+  https://nodejs.org/api/test.html
+  https://github.com/nodejs/node/blob/v22.23.4/lib/internal/abort_controller.js
 
 The compact-toolbar and earlier updates below describe previous baselines.
 
