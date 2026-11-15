@@ -1,5 +1,34 @@
 # HA Lists — handoff for a new local Codex session
 
+## IME suggestion continuity (2026-11-15)
+
+- Composing input now refreshes nonempty suggestion queries and invalidates old
+  replies. Temporary empty IME replacement retains the popup; composition state
+  guards Enter and form submission. Ordinary clear, no-match and blur still close
+  it. No backend, task data, dependency, packaging or translation change.
+- Regression fails against 90638ef: a stale no-match reply closes the popup while
+  a newer composing draft is present. Panel coverage also checks composing
+  queries, retained option nodes and accidental Enter prevention. Installed-HA
+  Playwright uses Chromium's IME protocol through the real HA input, checks
+  changing suggestions before composition ends and observes popup visibility.
+- Guidance mapping: current custom-panel context/theme requirements retain the
+  existing native shell and input; WAI-ARIA combobox editing/focus guidance and
+  W3C input/composition events inform read-only composing queries and submission
+  guards. Verify with panel event regressions and installed-HA IME, keyboard,
+  touch and navigation checks. Reconsulted Core AGENTS/integration knowledge,
+  HACS packaging and official pytest guidance; no Python or package-contract
+  change requires a new backend test. Existing HA integration tests still run.
+  Sources: https://contributors.home-assistant.io/frontend/custom-ui/panel/
+  https://www.w3.org/WAI/ARIA/apg/patterns/combobox/
+  https://www.w3.org/TR/input-events-2/
+  HA input contract: https://github.com/home-assistant/frontend/blob/20261028.5/src/components/input/ha-input.ts
+- Local all-checks passed: 59 Python tests, 97.09% integration coverage, 66 panel
+  tests, lint/format/syntax. Disposable-HA browser suite passed with IME editing;
+  actual Android keyboard/WebView and manual screen-reader validation remain
+  unverified. HACS reports 90638ef installed; that does not identify JavaScript
+  already cached in an individual Android session. No production writes or tests.
+  Check GitHub Validate separately for the final commit's CI status.
+
 ## Stable list layout and first-completion fix (2026-11-12)
 
 - The left list-name card no longer stretches with the task card; selected names

@@ -199,6 +199,40 @@ test("floating suggestions keep their results visible while a newer query is pen
   window.close();
 });
 
+test("IME edits refresh suggestions, reject stale responses and preserve the popup during replacement", async () => {
+  const stale = deferred();
+  const { panel, window, calls, requests } = await setup({ suggestions: ({ query }) => {
+    if (query === "mx") return stale.promise;
+    return { suggestions: ["Milk"] };
+  } });
+  draft(window, panel, "m");
+  await suggestionTick();
+  const option = panel._suggestionList.firstChild;
+  draft(window, panel, "mx");
+  await suggestionTick();
+  panel._input.dispatchEvent(new window.CompositionEvent("compositionstart", { bubbles: true }));
+  const compose = (value) => {
+    panel._input.value = value;
+    panel._input.dispatchEvent(new window.InputEvent("input", { bubbles: true, isComposing: true, inputType: "insertCompositionText" }));
+  };
+  compose("");
+  assert.equal(panel._suggestionList.hidden, false, "temporary IME replacement must retain the popup");
+  compose("mi");
+  stale.resolve({ suggestions: [] });
+  await tick();
+  assert.equal(panel._suggestionList.hidden, false, "old no-match replies must not close the composing popup");
+  await suggestionTick();
+  assert.equal(requests.filter((request) => request.type === "ha_lists/suggestions").at(-1).query, "mi");
+  assert.equal(panel._suggestionList.firstChild, option);
+  entryKey(window, panel, "Enter");
+  assert.equal(calls.length, 0, "composition state must guard Enter even without isComposing on the key event");
+  panel._input.dispatchEvent(new window.CompositionEvent("compositionend", { bubbles: true }));
+  await suggestionTick();
+  draft(window, panel, "");
+  assert.equal(panel._suggestionList.hidden, true, "an intentional non-composing clear still closes the popup");
+  window.close();
+});
+
 test("list actions are disclosed from the heading menu with keyboard close and retained drafts", async () => {
   const { panel, window } = await setup({ management: { available: [], deletable: {}, pending: [] } });
   draft(window, panel, "Unsent menu draft");

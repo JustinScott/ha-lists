@@ -97,8 +97,11 @@ Build a free, local-first, application-style list manager integrated into Home A
   Reposition on page/visual-viewport resize/scroll and remove listeners on
   disconnect. Nonempty typing is debounced 150 ms; retain the previous results
   and popup while new results load (`aria-busy`), then replace results in place.
-  Do not clear the popup on each letter or same-list native refresh. A real
-  no-match result, blank entry, blur, Escape or selection/list change can dismiss
+  Do not clear the popup on each letter or same-list native refresh.
+  IME composition also refreshes nonempty drafts and invalidates older replies;
+  retain the popup through a temporary empty composing replacement. Track the
+  composition session so Enter/form submission cannot accidentally add its text.
+  A real no-match result, non-composing blank entry, blur, Escape or selection/list change can dismiss
   it. Nothing is initially highlighted; changing the query resets selection. Arrow
   Down/Up selects an option; Enter on a selected option or tapping it adds a
   **new** native task with only that title. With no selection Enter/Add uses the

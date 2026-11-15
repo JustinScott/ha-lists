@@ -33,6 +33,7 @@ class HaListsPanel extends HTMLElement {
     this._suggestionIndex = -1;
     this._suggestionEpoch = 0;
     this._suggestionTimer = null;
+    this._entryComposing = false;
     this._suggestionPending = false;
     this._onSuggestionLayout = () => {
       if (this._suggestionList && !this._suggestionList.hidden) this.positionSuggestions();
@@ -472,16 +473,18 @@ class HaListsPanel extends HTMLElement {
     if (this._draft.trim() && this.shadowRoot.activeElement === this._input && !this._adding) this.queueSuggestions();
   }
 
-  queueSuggestions() {
+  queueSuggestions(composing = this._entryComposing) {
     clearTimeout(this._suggestionTimer);
     ++this._suggestionEpoch;
     const query = this._draft.trim();
-    if (!query || this._adding) { this.dismissSuggestions(); return; }
+    if ((!query && !composing) || this._adding) { this.dismissSuggestions(); return; }
     // Keep the last results in place while the next debounced query resolves.
     // Reset selection so Enter still adds literal text until explicitly chosen.
     this._suggestionIndex = -1;
     this._suggestionPending = true;
     this.renderSuggestions();
+    // IMEs may temporarily remove the composing word before replacing it.
+    if (!query) return;
     const epoch = this._suggestionEpoch;
     const entityId = this._selected;
     const connection = this._connection;
@@ -1253,7 +1256,7 @@ class HaListsPanel extends HTMLElement {
       // Handle Enter explicitly: ha-input's native field lives in its own shadow DOM,
       // so relying on the surrounding form's implicit submit is unreliable on Android.
       const submitOnEnter = (event) => {
-        if (event.isComposing || event.defaultPrevented) return;
+        if (this._entryComposing || event.isComposing || event.defaultPrevented) return;
         if (["ArrowDown", "ArrowUp"].includes(event.key) && this._suggestions.length) {
           event.preventDefault();
           event.stopPropagation();
@@ -1294,15 +1297,24 @@ class HaListsPanel extends HTMLElement {
       });
       this._input.addEventListener("input", (event) => {
         this._draft = this._input.value;
-        if (!event.isComposing) this.queueSuggestions();
+        this.queueSuggestions(this._entryComposing || event.isComposing);
       });
-      this._input.addEventListener("compositionend", () => { this._draft = this._input.value; this.queueSuggestions(); });
-      this._input.addEventListener("focusout", () => this.dismissSuggestions());
+      this._input.addEventListener("compositionstart", () => {
+        this._entryComposing = true;
+        this.queueSuggestions();
+      });
+      this._input.addEventListener("compositionend", () => {
+        this._entryComposing = false;
+        this._draft = this._input.value;
+        this.queueSuggestions();
+      });
+      this._input.addEventListener("focusout", () => { this._entryComposing = false; this.dismissSuggestions(); });
       this._input.addEventListener("focusin", () => { if (this._draft.trim()) this.queueSuggestions(); });
       this._submit = document.createElement("button");
       this._submit.type = "submit";
       this._form.addEventListener("submit", (event) => {
         event.preventDefault();
+        if (this._entryComposing) return;
         this._draft = this._input.value;
         this.addItem();
       });

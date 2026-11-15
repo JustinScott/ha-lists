@@ -43,6 +43,24 @@ export async function verifySuggestions({ browser, page, base, token, post, open
   await input.type("k");
   await page.waitForFunction((node) => node.getAttribute("aria-busy") === "false", popup);
   assert.equal(await page.evaluate(() => window.suggestionFlickers), 0);
+  // Chromium's IME protocol drives actual composition events through HA's input.
+  // Touch emulation and ordinary Playwright typing do not exercise this path.
+  await input.selectText();
+  const ime = await page.context().newCDPSession(page);
+  try {
+    for (const text of ["Catalog almond", "Catalog mi", "Catalog mil", "Catalog milk"]) {
+      await ime.send("Input.imeSetComposition", { text, selectionStart: text.length, selectionEnd: text.length });
+      await options.getByRole("option", { name: text === "Catalog almond" ? "Catalog almond milk" : "Catalog milk", exact: true }).waitFor();
+      await page.waitForFunction((value) => {
+        return value.node.value === value.text && value.popup.getAttribute("aria-busy") === "false";
+      }, { node: await input.elementHandle(), text, popup });
+      assert.equal(await input.getAttribute("aria-expanded"), "true");
+    }
+    await ime.send("Input.insertText", { text: "Catalog milk" });
+  } finally {
+    await ime.detach();
+  }
+  assert.equal(await page.evaluate(() => window.suggestionFlickers), 0, "IME edits must not hide the suggestion popup");
   assert.ok(Math.abs((await row.boundingBox()).y - (await input.boundingBox()).y - relativeRowBefore) <= 1,
     "suggestions must float without pushing task rows down");
   assert.equal(await input.getAttribute("aria-expanded"), "true");
