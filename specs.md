@@ -291,6 +291,15 @@ other todo entities
 - Task entry must work in the Home Assistant Android companion app as well as Chrome, Firefox, and desktop browsers. Use a compatible Home Assistant input component (currently `ha-input`); avoid unmounting or replacing the active input during asynchronous updates, which can dismiss the Android keyboard.
 - Pressing **Enter/Done** in the task input and activating **Add** must each submit the current item exactly once through the configured native `todo` entity.
 - **After a successful add**, clear the input, keep or restore focus to the task-entry field, and keep the Android soft keyboard available for immediate entry of the next item without another tap. This applies to both Enter and Add-button submission.
+- Keep the entry controls and viewport steady through submission. Keep Add's
+  label/size stable (disabled and `aria-busy` convey progress), preserve native
+  input focus on pointer activation, and avoid delayed refocusing or automatic
+  scrolling. An explicit Add tap can submit the current composing draft; an IME
+  confirmation Enter must not submit it accidentally. Retain the current list's
+  last native snapshot through refresh, including refresh failures, without
+  showing another list's tasks after switching. Under the default newest-first
+  sort, the native confirmed addition appears first without collapsing/rebuilding
+  the page layout. Preserve explicit filters and alternate sort choices.
 - On failure, preserve the unsent draft and show a clear error. Do not steal focus when navigating away or changing lists while a submission is pending. Handle IME composition, pending submissions, and duplicate-submit prevention.
 - Regression-test keyboard focus, consecutive additions, and submission in the Android companion app where feasible. The browser-only pass does not establish Android-app compatibility.
 - Track implementation in [GitHub issue #1](https://github.com/JustinScott/ha-lists/issues/1). This is a **Milestone 2 core task-entry requirement**, to complete before expanding to task completion/editing. The issue is not itself evidence that the behavior is implemented.

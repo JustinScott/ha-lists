@@ -1,5 +1,40 @@
 # HA Lists — handoff for a new local Codex session
 
+## Steady task entry (2026-11-15)
+
+- Add retains its label/size; disabled state and form aria-busy indicate progress.
+  Pointerdown preserves an already-focused native input. Focus is established
+  synchronously with preventScroll when needed, never twice after async writes.
+  Moving focus elsewhere during a write is respected. Explicit pointer/touch Add
+  can submit a composing draft; IME confirmation Enter remains guarded. Chromium
+  touch clicks can have detail=0, so use pointerType as well as click count.
+- Keep the current entity's last successful native snapshot during refresh and
+  refresh failure. Clear snapshot ownership on connection/list changes; never
+  show another list's tasks. Initial loads still show loading feedback. This
+  avoids collapsing the page and clamping its scroll position after each add.
+- Four panel regressions cover pending refresh/button geometry contracts,
+  pointer focus/late focus stealing, refresh failure/list isolation and explicit
+  composing Add. Each affected behavior failed before its fix. Installed-HA
+  browser checks sample control bounds every frame in a 390x430 viewport, assert
+  no input blur, exercise actual Chromium composition plus touch Add and immediate
+  keyboard entry, and verify confirmed additions appear first. The whole form is
+  made visible before measurement so automation's initial scrolling is excluded.
+- Guidance mapping: current HA custom-panel/theme/context guidance preserves the
+  native shell and ha-input; pinned HA input delegatesFocus plus HTML focus and
+  Pointer Events guidance inform preventScroll and retained native focus. Verify
+  through panel focus/race tests and installed-HA bounds/touch/keyboard/IME checks.
+  Reconsulted Core AGENTS/integration knowledge, HACS and official pytest guidance;
+  backend permissions, storage, packaging and translations are unchanged, so no
+  new Python test is needed. Existing real-HA tests remain mandatory.
+  Sources: https://contributors.home-assistant.io/frontend/custom-ui/panel/
+  https://html.spec.whatwg.org/multipage/interaction.html#dom-focus-dev
+  https://www.w3.org/TR/pointerevents3/#the-pointerdown-event
+  https://github.com/home-assistant/frontend/blob/20261028.5/src/components/input/wa-input-mixin.ts
+- Local lint/format/syntax, 59 Python tests (97.09% coverage), 70 panel tests and
+  the complete disposable-HA browser workflow passed. Actual Android Companion
+  keyboard/viewport and manual screen-reader verification remain unverified.
+  No production writes/deployment. Consult final commit's GitHub Validate status.
+
 ## IME suggestion continuity (2026-11-15)
 
 - Composing input now refreshes nonempty suggestion queries and invalidates old

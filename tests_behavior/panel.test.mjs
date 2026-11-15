@@ -822,6 +822,69 @@ test("Add button submits through native service and clears input", async () => {
   assert.deepEqual(rows(panel).map((row) => row.textContent), ["Eggs"]);
 });
 
+test("adding keeps the existing snapshot and button label through the delayed refresh", async () => {
+  const refresh = deferred();
+  let reads = 0;
+  const initial = [{ uid: "old", summary: "Existing task", status: "needs_action" }];
+  const { panel, window } = await setup({ readItems: () => ++reads === 1 ? initial : refresh.promise });
+  draft(window, panel, "New task");
+  const adding = panel.addItem();
+  assert.equal(panel._submit.textContent, "Add", "pending adds must not resize the button");
+  await tick();
+  assert.deepEqual(visibleTitles(panel), ["Existing task"], "refresh must not collapse the list");
+  assert.equal(panel._results.textContent.includes("Loading tasks"), false);
+  refresh.resolve([...initial, { uid: "new", summary: "New task", status: "needs_action" }]);
+  await adding;
+  assert.deepEqual(visibleTitles(panel), ["New task", "Existing task"]);
+  window.close();
+});
+
+test("Add preserves pointer focus and never refocuses after the user moves away", async () => {
+  const pending = deferred();
+  const { panel, window } = await setup({ service: () => pending.promise });
+  panel._input.tabIndex = 0;
+  panel._input.focus();
+  const down = new window.MouseEvent("pointerdown", { button: 0, bubbles: true, cancelable: true });
+  panel._submit.dispatchEvent(down);
+  assert.equal(down.defaultPrevented, true, "tapping Add must not blur an already-focused input");
+  draft(window, panel, "New task");
+  const adding = panel.addItem();
+  panel._listMenuToggle.focus();
+  pending.resolve();
+  await adding;
+  assert.equal(panel.shadowRoot.activeElement, panel._listMenuToggle, "late completion must not steal focus");
+  window.close();
+});
+
+test("same-list refresh failure retains tasks but list switching never shows the old snapshot", async () => {
+  const { panel, window } = await setup({ lists: ["todo.groceries", "todo.other"],
+    readItems: () => [{ uid: "old", summary: "Existing task", status: "needs_action" }] });
+  panel._connection.sendMessagePromise = async () => { throw Error("Offline"); };
+  await panel.loadItems();
+  assert.deepEqual(visibleTitles(panel), ["Existing task"]);
+  panel._selected = "todo.other";
+  await panel.loadItems();
+  assert.deepEqual(visibleTitles(panel), []);
+  window.close();
+});
+
+test("an explicit Add tap submits the current composing draft once", async () => {
+  for (const pointerType of ["", "touch"]) {
+    const { panel, window, calls } = await setup();
+    draft(window, panel, "Composing task");
+    panel._input.dispatchEvent(new window.CompositionEvent("compositionstart", { bubbles: true }));
+    const click = new window.MouseEvent("click", { detail: pointerType ? 0 : 1, bubbles: true, cancelable: true });
+    Object.defineProperty(click, "pointerType", { value: pointerType });
+    panel._submit.dispatchEvent(click);
+    await tick(); await tick();
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].data.item, "Composing task");
+    assert.equal(panel._input.value, "");
+    assert.equal(panel._entryComposing, false);
+    window.close();
+  }
+});
+
 test("IME composition and repeated Enter do not create extra tasks", async () => {
   const pending = deferred();
   const { panel, window, calls } = await setup({ service: () => pending.promise });

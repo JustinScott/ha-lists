@@ -25,6 +25,7 @@ class HaListsPanel extends HTMLElement {
     this._deleteListTarget = null;
     this._selected = "";
     this._items = [];
+    this._itemsEntity = "";
     this._error = "";
     this._loading = false;
     this._adding = false;
@@ -102,6 +103,7 @@ class HaListsPanel extends HTMLElement {
       this._selected = "";
       this._edit = null;
       this._items = [];
+      this._itemsEntity = "";
       this._loading = false;
       this._error = "";
       this.render();
@@ -308,6 +310,7 @@ class HaListsPanel extends HTMLElement {
         // A pushed snapshot supersedes any older in-flight list request.
         ++this._requestId;
         this._items = response.items || [];
+        this._itemsEntity = entityId;
         this._loading = false;
         this._error = "";
         this.render();
@@ -401,10 +404,12 @@ class HaListsPanel extends HTMLElement {
     this.loadSuggestionHistory();
     this.subscribeItems(entityId);
     const requestId = ++this._requestId;
-    this._items = [];
+    if (this._itemsEntity !== entityId) { this._items = []; this._itemsEntity = ""; }
     this._error = "";
     if (!entityId || !this._connection) {
       this._loading = false;
+      this._items = [];
+      this._itemsEntity = "";
       this.render();
       return;
     }
@@ -417,6 +422,7 @@ class HaListsPanel extends HTMLElement {
       });
       if (requestId !== this._requestId) return;
       this._items = response.items || [];
+      this._itemsEntity = entityId;
     } catch (error) {
       if (requestId !== this._requestId) return;
       this._error = "Unable to load tasks: " + (error?.message || String(error));
@@ -435,6 +441,7 @@ class HaListsPanel extends HTMLElement {
     if (!entityId || !item || this._adding || this._loading) return;
     if (!this.availableLists.some((entity) => entity.entity_id === entityId)) return;
     this._adding = true;
+    if (this.shadowRoot.activeElement !== this._input) this._input.focus({ preventScroll: true });
     this.dismissSuggestions();
     this._error = "";
     this.render();
@@ -445,12 +452,9 @@ class HaListsPanel extends HTMLElement {
       });
       if (this._selected === entityId) {
         this._draft = "";
-        // Clear and refocus immediately, before the asynchronous list refresh.
-        // The input must remain enabled: disabling it dismisses Android's IME.
+        // Keep focus in place; delayed refocusing scrolls Android's viewport.
         this._input.value = "";
-        this._input.focus();
         await this.loadItems();
-        if (this._selected === entityId && this.isConnected) this._input.focus();
       }
     } catch (error) {
       this._error = "Unable to add task: " + (error?.message || String(error));
@@ -1312,6 +1316,18 @@ class HaListsPanel extends HTMLElement {
       this._input.addEventListener("focusin", () => { if (this._draft.trim()) this.queueSuggestions(); });
       this._submit = document.createElement("button");
       this._submit.type = "submit";
+      this._submit.addEventListener("pointerdown", (event) => {
+        if (event.button === 0 && this.shadowRoot.activeElement === this._input) event.preventDefault();
+      });
+      this._submit.addEventListener("click", (event) => {
+        // An explicit tap commits the draft; an implicit IME Enter does not.
+        if (this._entryComposing && (event.pointerType || event.detail > 0)) {
+          event.preventDefault();
+          this._entryComposing = false;
+          this._draft = this._input.value;
+          this.addItem();
+        }
+      });
       this._form.addEventListener("submit", (event) => {
         event.preventDefault();
         if (this._entryComposing) return;
@@ -1449,7 +1465,8 @@ class HaListsPanel extends HTMLElement {
     // that blurs the native field and closes the soft keyboard.
     this._input.disabled = !selected || selected.state === "unavailable";
     this._submit.disabled = this._adding || this._loading || this._input.disabled;
-    this._submit.textContent = this._adding ? "Adding…" : "Add";
+    this._submit.textContent = "Add";
+    this._form.setAttribute("aria-busy", String(this._adding));
     // Keep the live input value and caret intact while it has focus.
     if (this.shadowRoot.activeElement !== this._input && this._input.value !== this._draft) {
       this._input.value = this._draft;
@@ -1469,13 +1486,14 @@ class HaListsPanel extends HTMLElement {
     this._filters.hidden = !selected;
     this._sortSelect.value = this._sort;
     this._sortHelp.hidden = !selected;
-    this._filterCount.textContent = this._loading ? "Loading tasks…" : `${visibleItems.length} of ${this._items.length} tasks`;
+    const initialLoading = this._loading && this._itemsEntity !== this._selected;
+    this._filterCount.textContent = initialLoading ? "Loading tasks…" : `${visibleItems.length} of ${this._items.length} tasks`;
     this._filterHelp.hidden = !selected || !["today", "overdue"].includes(this._filter);
     this._filterHelp.textContent = (this._filter === "today"
       ? "Unfinished tasks due today. " : "Unfinished tasks past their deadline. ") +
       "Time zone: " + Intl.DateTimeFormat().resolvedOptions().timeZone;
     const results = [];
-    if (this._loading) {
+    if (initialLoading) {
       const p = document.createElement("p");
       p.textContent = "Loading tasks…";
       results.push(p);
@@ -1487,7 +1505,7 @@ class HaListsPanel extends HTMLElement {
       p.textContent = this._error;
       results.push(p);
     }
-    if (!this._loading && selected) {
+    if (!initialLoading && selected) {
       if (!visibleItems.length) {
         const p = document.createElement("p");
         p.className = "muted";
