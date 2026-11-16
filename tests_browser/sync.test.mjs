@@ -1,3 +1,4 @@
+import { chooseList } from "./panel-controls.mjs";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -14,6 +15,7 @@ import { verifyTaskSorting } from "./sort-checks.mjs";
 import { verifyListManagement } from "./list-checks.mjs";
 import { verifyCompactControls } from "./compact-checks.mjs";
 import { verifySuggestions } from "./suggestion-checks.mjs";
+import { verifyListDrawer } from "./drawer-checks.mjs";
 import { verifySteadyEntry } from "./entry-checks.mjs";
 
 const docker = promisify(execFile);
@@ -218,9 +220,10 @@ test("native To-do and HA Lists share task changes across browser sessions", { t
         });
       });
     });
-    await lists.getByRole("button", { name: listName }).waitFor();
+    await lists.getByRole("heading", { name: listName, exact: true }).waitFor();
     await lists.getByText("No tasks found.").waitFor();
     await verifyPanelNavigation(lists);
+    await verifyListDrawer({ page: lists, listName, secondName });
     await verifyCompactControls(lists);
     const quickAdd = lists.locator("ha-lists-panel ha-input input");
     await lists.locator("ha-lists-panel ha-input").evaluate(async (input) => {
@@ -262,13 +265,13 @@ test("native To-do and HA Lists share task changes across browser sessions", { t
     await lists.getByRole("button", { name: `Rename ${failureDraft}`, exact: true }).waitFor();
     assert.equal(await quickAdd.inputValue(), "");
 
-    await lists.getByRole("button", { name: secondName, exact: true }).tap();
+    await chooseList(lists, secondName);
     await lists.getByRole("heading", { name: secondName, exact: true }).waitFor();
     await lists.getByText("No tasks found.", { exact: true }).waitFor();
     await quickAdd.fill("Second list only");
     await quickAdd.press("Enter");
     await lists.getByRole("button", { name: "Rename Second list only", exact: true }).waitFor();
-    await lists.getByRole("button", { name: listName, exact: true }).tap();
+    await chooseList(lists, listName);
     await lists.getByRole("button", { name: "Rename First quick task", exact: true }).waitFor();
     assert.equal(await lists.getByRole("button", { name: "Rename Second list only", exact: true }).count(), 0);
     console.log("Verified mobile layout/focus, rapid entry, provider rejection/retry, and list switching");

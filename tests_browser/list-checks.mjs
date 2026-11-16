@@ -1,4 +1,4 @@
-import { clickListAction } from "./panel-controls.mjs";
+import { chooseList, clickListManagement, openListSelector, clickListAction } from "./panel-controls.mjs";
 import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
@@ -9,6 +9,8 @@ export async function verifyListManagement({ browser, page, native, base, token,
     const previous = page.viewportSize();
     for (const [layout, width] of [["desktop", 1280], ["mobile", 390]]) {
       await page.setViewportSize({ width, height: 900 });
+      await page.getByRole("button", { name: "My lists", exact: true }).waitFor({ state: width === 390 ? "visible" : "hidden" });
+      await openListSelector(page);
       // HA's narrow state and sidebar layout update asynchronously on resize.
       await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth);
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
@@ -18,6 +20,8 @@ export async function verifyListManagement({ browser, page, native, base, token,
       }
     }
     await page.setViewportSize(previous);
+    await page.getByRole("button", { name: "My lists", exact: true }).waitFor({ state: previous.width === 390 ? "visible" : "hidden" });
+    await openListSelector(page);
   };
   const listButton = (target, name) => target.locator("ha-lists-panel nav").getByRole("button", { name, exact: true });
   const items = async (id) => (await post(base, "/api/services/todo/get_items?return_response", { entity_id: id }, token)).service_response[id].items;
@@ -32,24 +36,24 @@ export async function verifyListManagement({ browser, page, native, base, token,
     return found[0].entity_id;
   };
   const choose = async (name) => {
-    await listButton(page, name).click();
+    await chooseList(page, name);
     await page.getByRole("heading", { name, exact: true }).waitFor();
     await page.locator('ha-lists-panel [role="status"]').filter({ hasText: /^\d+( of \d+)? tasks?$/ }).waitFor();
   };
   const create = async (name) => {
-    await page.getByRole("button", { name: "New list", exact: true }).click();
+    await clickListManagement(page, "New list");
     await page.getByRole("textbox", { name: "List name", exact: true }).fill(name);
     await reviewLayout("create");
     await page.getByRole("button", { name: "Create list", exact: true }).click();
-    await listButton(observer, name).waitFor();
+    await listButton(observer, name).waitFor({ state: "attached" });
     await choose(name);
     return findEntity(name);
   };
   const connect = async (id, name) => {
-    await page.getByRole("button", { name: "Connect existing list", exact: true }).click();
+    await clickListManagement(page, "Connect existing list");
     await page.getByRole("combobox", { name: "Existing Local To-do list", exact: true }).selectOption(id);
     await page.getByRole("button", { name: "Show list", exact: true }).click();
-    await listButton(observer, name).waitFor();
+    await listButton(observer, name).waitFor({ state: "attached" });
     await choose(name);
   };
   const remove = async (name) => {
@@ -68,6 +72,7 @@ export async function verifyListManagement({ browser, page, native, base, token,
   try {
     const previousViewport = page.viewportSize();
     await page.setViewportSize({ width: 1280, height: 900 });
+    await page.getByRole("button", { name: "My lists", exact: true }).waitFor({ state: "hidden" });
     const firstName = await page.locator("ha-lists-panel nav button").first().innerText();
     const secondName = await page.locator("ha-lists-panel nav button").nth(1).innerText();
     await choose(firstName);
@@ -78,6 +83,7 @@ export async function verifyListManagement({ browser, page, native, base, token,
     assert.ok(Math.abs(paneAfter.width - paneBefore.width) <= 1);
     await choose(firstName);
     await page.setViewportSize(previousViewport);
+    await page.getByRole("button", { name: "My lists", exact: true }).waitFor({ state: previousViewport.width === 390 ? "visible" : "hidden" });
     const original = await items(entityId);
     const alpha = "UI alpha list";
     const beta = "UI beta list";
@@ -101,7 +107,7 @@ export async function verifyListManagement({ browser, page, native, base, token,
     await clickListAction(page, "Remove list from panel");
     await listButton(observer, alpha).waitFor({ state: "detached" });
     assert.deepEqual(await items(alphaId), alphaTasks);
-    await page.getByRole("button", { name: "New list", exact: true }).click();
+    await clickListManagement(page, "New list");
     await page.getByRole("textbox", { name: "List name", exact: true }).fill(alpha);
     await page.getByRole("button", { name: "Create list", exact: true }).click();
     await page.getByText("A Local To-do list with this name already exists.", { exact: true }).waitFor();

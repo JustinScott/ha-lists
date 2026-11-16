@@ -1,5 +1,43 @@
 # HA Lists — handoff for a new local Codex session
 
+## Narrow-screen list drawer (2026-11-15)
+
+- HA-supplied narrow mode places the existing list pane inside a native modal
+  dialog, opened with the labelled hamburger “My lists” button in the header.
+  Desktop keeps the persistent pane. There is one shared selector/management
+  form tree; moving it on responsive changes never detaches task entry. List
+  selection closes the drawer, restores opener focus and retains the quick draft.
+- Native dialog supplies modal background inertness; explicit Tab/Shift+Tab
+  boundary wrapping keeps focus out of browser chrome. Close, Escape and backdrop
+  dismissal work. Opening slides from the left; reduced motion disables animation.
+  Resizing to desktop closes the modal and restores the inline pane. Close it on
+  unload. Preserve focused list identity through native navigation rerenders.
+- New/Connect stay in the drawer. Deletion confirmation/errors open it on narrow
+  screens, focusing Keep list; cancelling or successful deletion returns to the
+  task pane. Creation closes it when the new list is automatically selected.
+  Existing admin permissions, confirmations and native task authority remain.
+- Guidance mapping: current HA custom-panel/context docs require the native HA
+  header/sidebar and supplied narrow state; those stay separate from the local
+  selector and task-options menu. HTML dialog and WAI-ARIA modal guidance map to
+  native showModal/close, labelling, focus containment/restoration and dismissal.
+  Installed-HA browser tests verify actual focus cycles, touch/keyboard selection,
+  backdrop/Escape, retained geometry/drafts, desktop resizing, native HA sidebar
+  and all management workflows. The panel regression covers state/lifecycle and
+  stable task input with a minimal dialog test double; it cannot prove modality.
+  Sources: https://contributors.home-assistant.io/frontend/custom-ui/panel/
+  https://html.spec.whatwg.org/multipage/interactive-elements.html#the-dialog-element
+  https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/
+  Core AGENTS/integration knowledge, HACS and official pytest guidance were
+  reconsulted. No backend API/storage/dependency/packaging change; existing real
+  HA integration tests remain the backend gate. Specs and README updated.
+- Local lint/format/syntax, 59 Python tests (97.09% coverage), 73 panel tests and
+  the complete disposable-HA browser workflow passed. Reviewed synthetic mobile
+  open/closed drawer screenshots. Browser helpers use actual visible navigation,
+  await HA narrow-state updates on resize and animation completion for screenshots;
+  no assertions/timeouts were removed. Android Companion/keyboard and manual
+  screen-reader verification remain unverified. No production writes/deployment.
+  Consult final commit's GitHub Validate status separately.
+
 ## Explicit Enter during dictation (2026-11-15)
 
 - Composition session state now controls suggestion continuity, not a blanket

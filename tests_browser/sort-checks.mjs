@@ -1,3 +1,4 @@
+import { chooseList } from "./panel-controls.mjs";
 import { clickListAction, closeListMenu, openViewOptions, selectTaskView } from "./panel-controls.mjs";
 import assert from "node:assert/strict";
 
@@ -51,10 +52,10 @@ export async function verifyTaskSorting({ page, base, token, post, entityId, lis
     await selectTaskView(page, "Show tasks", "active");
     await expectTitles(["Sort older", "Sort newer"]);
     await selectTaskView(page, "Show tasks", "all");
-    await page.getByRole("button", { name: secondName, exact: true }).click();
+    await chooseList(page, secondName);
     await page.getByText("No tasks match your search and filter.", { exact: true }).waitFor();
     assert.equal(await sortState.inputValue(), "oldest");
-    await page.getByRole("button", { name: listName, exact: true }).click();
+    await chooseList(page, listName);
     await expectTitles(["Sort older", "Sort newer", ...completed]);
     await openViewOptions(page);
     await sort.focus();

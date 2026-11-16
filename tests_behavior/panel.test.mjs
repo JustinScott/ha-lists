@@ -27,6 +27,8 @@ async function setup({ lists = ["todo.groceries"], items = [], service, readItem
     constructor() { super(); this.value = ""; }
   }
   window.customElements.define("ha-input", HaInput);
+  window.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
+  window.HTMLDialogElement.prototype.close = function () { this.open = false; this.dispatchEvent(new window.Event("close")); };
   window.eval(source);
   const calls = [];
   const requests = [];
@@ -78,6 +80,36 @@ async function setup({ lists = ["todo.groceries"], items = [], service, readItem
 }
 
 function rows(panel) { return [...panel.shadowRoot.querySelectorAll("li")]; }
+
+test("narrow list selection is modal, closes on selection/cancel and preserves entry drafts", async () => {
+  const { panel, window } = await setup({ lists: ["todo.groceries", "todo.other"] });
+  draft(window, panel, "Unsent drawer draft");
+  const input = panel._input;
+  panel.narrow = true;
+  assert.equal(panel._listPane.parentElement, panel._listDrawer);
+  assert.equal(panel._listDrawer.open, false);
+  assert.equal(panel._listDrawerToggle.hidden, false);
+  panel._listDrawerToggle.click();
+  assert.equal(panel._listDrawer.open, true);
+  assert.equal(panel._listDrawerToggle.getAttribute("aria-expanded"), "true");
+  panel._nav.querySelectorAll("button")[1].click();
+  await tick();
+  assert.equal(panel._selected, "todo.other");
+  assert.equal(panel._listDrawer.open, false);
+  assert.equal(panel.shadowRoot.activeElement, panel._listDrawerToggle);
+  assert.equal(panel._input, input);
+  assert.equal(input.value, "Unsent drawer draft");
+  panel._listDrawerToggle.click();
+  panel._listDrawer.dispatchEvent(new window.Event("cancel", { cancelable: true }));
+  assert.equal(panel._listDrawer.open, false);
+  panel._listDrawerToggle.click();
+  panel.narrow = false;
+  assert.equal(panel._listDrawer.open, false);
+  assert.equal(panel._listDrawerToggle.hidden, true);
+  assert.equal(panel._listPane.parentElement, panel._layout);
+  assert.equal(input.value, "Unsent drawer draft");
+  window.close();
+});
 function search(window, panel, value) {
   if (panel._searchControls.hidden) panel._searchToggle.click();
   const input = panel._searchInput;

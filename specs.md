@@ -24,7 +24,16 @@ Build a free, local-first, application-style list manager integrated into Home A
 - Register a dedicated **Lists** sidebar entry opening a full-page panel, not a collection of scattered dashboard cards.
 - Beacon-inspired clean task list, but **show full list names**, not icon-only list navigation.
 - Desktop: persistent named-list sidebar, item counts, search, main list pane; optionally resizable split layout.
-- Android: responsive list selector showing full names, touch-friendly rows, accessible controls, and a full-screen task editor.
+- Android/narrow layout: a labelled hamburger “My lists” control opens a modal
+  drawer from the side, showing full list names and New/Connect controls. Keep
+  the selector out of normal page flow so the task pane occupies the screen.
+  Selecting any list closes the drawer and restores focus to its opener. Provide
+  Close, Escape and backdrop dismissal, contained keyboard focus, reduced-motion
+  support and bounded scrolling. Keep the HA navigation button and task-options
+  menu separate. Desktop retains its persistent list pane. Honor HA's supplied
+  narrow state; resizing to desktop closes the modal and restores the inline
+  selector without replacing task entry or losing drafts. Keep creation,
+  connection, errors and deletion confirmations accessible inside the drawer.
 - Follow Home Assistant theme, light/dark mode, spacing, accessibility and safe-area conventions. No separate login or publicly exposed web server.
 - Provide loading, empty, offline, permission-denied, and error states; maintain keyboard and screen-reader support.
 - The panel must provide its own themed header and Home Assistant sidebar menu
@@ -44,7 +53,9 @@ Build a free, local-first, application-style list manager integrated into Home A
 - Desktop task detail: side pane/dialog; Android: full-screen detail view. Save/cancel and unsaved-change warning.
 - List-specific presentation templates: **Simple/Grocery** mode defaults to compact entry; **Projects/Home Improvement** mode enables detailed fields; fields remain accessible regardless of mode.
 - Optional grocery enhancements: quantity/unit, store section, frequent items, category grouping, quick-add shortcuts.
-- Avoid unnecessary modals, icon-only navigation, swipe-only controls, and popup-only list access.
+- Avoid unnecessary modals, icon-only navigation and swipe-only controls. The
+  labelled narrow-screen list drawer is the approved mobile navigation; desktop
+  retains persistent list access.
 
 ### Suggestions/autocomplete
 
@@ -362,7 +373,7 @@ other todo entities
   heading with the existing focus/query behavior. The native HA sidebar button
   remains separate in the top-left shell header. Constrain floating controls
   to available viewport space without stealing input focus.
-- The left list selector must retain its width/height when switching between
+- The desktop left list selector must retain its width/height when switching between
   lists with different task counts. Do not stretch it to the right panel's
   content height or change name wrapping with selected font weight. Explicit
   list creation/connection/confirmation content may expand its own section.

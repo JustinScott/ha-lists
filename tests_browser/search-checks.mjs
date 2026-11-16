@@ -1,3 +1,4 @@
+import { chooseList } from "./panel-controls.mjs";
 import assert from "node:assert/strict";
 import { selectTaskView } from "./panel-controls.mjs";
 
@@ -19,10 +20,10 @@ export async function verifyTaskSearch({ page, base, token, post, entityId, list
   await selectTaskView(page, "Show tasks", "completed");
   await page.getByText("No tasks match your search and filter.", { exact: true }).waitFor();
   await selectTaskView(page, "Show tasks", "all");
-  await page.getByRole("button", { name: secondName, exact: true }).click();
+  await chooseList(page, secondName);
   await page.getByText("No tasks match your search and filter.", { exact: true }).waitFor();
   assert.equal(await search.inputValue(), "  VIOLET  ");
-  await page.getByRole("button", { name: listName, exact: true }).click();
+  await chooseList(page, listName);
   await page.getByRole("button", { name: "Rename Search sample", exact: true }).waitFor();
   const response = await post(base, "/api/services/todo/get_items?return_response", { entity_id: entityId }, token);
   const item = response.service_response[entityId].items.find((task) => task.summary === "Search sample");

@@ -1,4 +1,4 @@
-import { clickListAction, openViewOptions } from "./panel-controls.mjs";
+import { chooseList, clickListManagement, clickListAction, openViewOptions } from "./panel-controls.mjs";
 import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
@@ -18,10 +18,10 @@ export async function verifySuggestions({ browser, page, base, token, post, open
   };
   for (const title of ["Catalog milk", "Catalog milkshake", "Catalog almond milk"]) await completed(title);
   await post(base, "/api/services/todo/add_item", { entity_id: entityId, item: "Catalog baseline" }, token);
-  await page.getByRole("button", { name: "Connect existing list", exact: true }).click();
+  await clickListManagement(page, "Connect existing list");
   await page.getByRole("combobox", { name: "Existing Local To-do list", exact: true }).selectOption(entityId);
   await page.getByRole("button", { name: "Show list", exact: true }).click();
-  await page.getByRole("button", { name, exact: true }).click();
+  await chooseList(page, name);
   await page.getByRole("button", { name: "Rename Catalog milk", exact: true }).waitFor();
   const input = page.locator('ha-lists-panel ha-input[label="Add a task"] input');
   const options = page.getByRole("listbox", { name: "Task suggestions", exact: true });
@@ -95,13 +95,13 @@ export async function verifySuggestions({ browser, page, base, token, post, open
   await page.goto(new URL(`/todo?entity_id=${entityId}`, base).href);
   await completed("Catalog automation");
   await page.goto(new URL("/ha-lists", base).href);
-  await page.getByRole("button", { name, exact: true }).click();
+  await chooseList(page, name);
   await page.getByRole("button", { name: "Rename Catalog automation", exact: true }).waitFor();
   await input.fill("Catalog auto");
   await options.getByRole("option", { name: "Catalog automation", exact: true }).waitFor();
   const observer = await openPanel(browser, base, "/ha-lists", username, password);
   try {
-    await observer.getByRole("button", { name, exact: true }).click();
+    await chooseList(observer, name);
     const otherInput = observer.locator('ha-lists-panel ha-input[label="Add a task"] input');
     await otherInput.fill("Catalog auto");
     await observer.getByRole("option", { name: "Catalog automation", exact: true }).waitFor();

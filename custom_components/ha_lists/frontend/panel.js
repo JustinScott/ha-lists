@@ -139,6 +139,7 @@ class HaListsPanel extends HTMLElement {
   }
 
   disconnectedCallback() {
+    this.closeListDrawer(false);
     window.removeEventListener("resize", this._onSuggestionLayout);
     document.removeEventListener("scroll", this._onSuggestionLayout, true);
     window.visualViewport?.removeEventListener("resize", this._onSuggestionLayout);
@@ -163,6 +164,34 @@ class HaListsPanel extends HTMLElement {
   localDay(date) {
     return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"),
       String(date.getDate()).padStart(2, "0")].join("-");
+  }
+
+  openListDrawer() {
+    if (!this._narrow || this._listDrawer.open) return;
+    this._listMenuOpen = false;
+    this.renderListMenu();
+    this.dismissSuggestions();
+    this._listDrawer.showModal();
+    this._listDrawerToggle.setAttribute("aria-expanded", "true");
+    (this._nav.querySelector('[aria-current="true"]') || this._drawerClose).focus({ preventScroll: true });
+  }
+
+  closeListDrawer(restoreFocus = true) {
+    if (!this._listDrawer?.open) return;
+    this._listDrawer.close();
+    this._listDrawerToggle.setAttribute("aria-expanded", "false");
+    if (restoreFocus && this.isConnected && this._narrow) this._listDrawerToggle.focus({ preventScroll: true });
+  }
+
+  updateListLayout() {
+    this._listDrawerToggle.hidden = !this._narrow;
+    const parent = this._narrow ? this._listDrawer : this._layout;
+    if (this._listPane.parentElement === parent) return;
+    const wasOpen = this._listDrawer.open;
+    this.closeListDrawer(false);
+    if (this._narrow) parent.append(this._listPane);
+    else parent.prepend(this._listPane);
+    if (wasOpen && !this._narrow) this._nav.querySelector('[aria-current="true"]')?.focus({ preventScroll: true });
   }
 
   renderSearchControls() {
@@ -255,9 +284,11 @@ class HaListsPanel extends HTMLElement {
             this._selected === operation.selected && !this._edit && !this._draft.trim()) {
           this._selected = response.entity_id;
           await this.loadItems();
+          this.closeListDrawer();
         }
       } else if (request.type === "ha_lists/list/delete") {
         this._deleteListTarget = null;
+        this.closeListDrawer();
         this._listNotice = response.require_restart
           ? "List removed. Home Assistant requires a restart to finish unloading it."
           : "List and its tasks deleted from Home Assistant.";
@@ -274,6 +305,7 @@ class HaListsPanel extends HTMLElement {
       if (operation === this._listOperation) {
         this._listOperation = null;
         this.render();
+        if (this._listError) this.openListDrawer();
       }
     }
   }
@@ -285,6 +317,7 @@ class HaListsPanel extends HTMLElement {
     this._confirmListName.value = "";
     this._listError = "";
     this.render();
+    this.openListDrawer();
     this._keepList.focus();
   }
 
@@ -831,6 +864,17 @@ class HaListsPanel extends HTMLElement {
         main { max-width:1200px; margin:auto; padding:24px; }
         header { display:flex; align-items:center; gap:8px; min-height:var(--header-height,56px); padding:0 8px; position:sticky; top:0; z-index:1; color:var(--app-header-text-color,var(--primary-text-color)); background:var(--app-header-background-color,var(--primary-background-color)); }
         header h1 { margin:0; font-size:20px; font-weight:400; }
+        .drawer-toggle { margin-inline-start:auto; display:flex; align-items:center; gap:8px; min-height:44px; padding:8px 12px; font:inherit; color:inherit; background:transparent; border:1px solid currentColor; border-radius:8px; cursor:pointer; }
+        .drawer-toggle svg { width:24px; height:24px; fill:currentColor; }
+        .list-drawer { box-sizing:border-box; position:fixed; inset:0 auto 0 0; margin:0; padding:0; width:min(340px,calc(100vw - 44px)); max-width:none; height:100dvh; max-height:100dvh; border:0; background:var(--card-background-color); color:var(--primary-text-color); box-shadow:var(--ha-card-box-shadow,0 6px 18px rgba(0,0,0,.22)); overscroll-behavior:contain; }
+        .list-drawer::backdrop { background:rgba(0,0,0,.45); }
+        .list-drawer[open] { animation:list-drawer-in 160ms ease-out; }
+        .drawer-heading { display:flex; align-items:center; justify-content:space-between; padding:8px 18px; border-bottom:1px solid var(--divider-color); }
+        .drawer-heading h2 { font-size:20px; margin:0; }
+        .drawer-heading button { min-width:44px; min-height:44px; font:inherit; color:inherit; background:transparent; border:0; cursor:pointer; }
+        .list-drawer .list-pane { border:0; border-radius:0; }
+        @keyframes list-drawer-in { from { transform:translateX(-100%); } to { transform:translateX(0); } }
+        @media(prefers-reduced-motion:reduce) { .list-drawer[open] { animation:none; } }
         .layout { display:grid; grid-template-columns:minmax(220px,290px) minmax(0,1fr); gap:18px; }
         .list-pane,article { min-width:0; padding:18px; background:var(--card-background-color); border:1px solid var(--divider-color); border-radius:12px; }
         .list-pane { align-self:start; }
@@ -918,6 +962,8 @@ class HaListsPanel extends HTMLElement {
       this._nav.setAttribute("aria-label", "Configured to-do lists");
       const listPane = document.createElement("section");
       listPane.className = "list-pane";
+      this._listPane = listPane;
+      this._layout = layout;
       const actionButton = (text, handler) => {
         const button = document.createElement("button");
         button.type = "button";
@@ -925,6 +971,50 @@ class HaListsPanel extends HTMLElement {
         button.addEventListener("click", handler);
         return button;
       };
+      this._listDrawer = document.createElement("dialog");
+      this._listDrawer.id = "list-selector";
+      this._listDrawer.className = "list-drawer";
+      this._listDrawer.setAttribute("aria-labelledby", "list-selector-title");
+      const drawerHeading = document.createElement("div");
+      drawerHeading.className = "drawer-heading";
+      const drawerTitle = document.createElement("h2");
+      drawerTitle.id = "list-selector-title";
+      drawerTitle.textContent = "My lists";
+      this._drawerClose = actionButton("×", () => this.closeListDrawer());
+      this._drawerClose.setAttribute("aria-label", "Close list selector");
+      drawerHeading.append(drawerTitle, this._drawerClose);
+      this._listDrawer.append(drawerHeading);
+      this._listDrawer.addEventListener("cancel", (event) => { event.preventDefault(); this.closeListDrawer(); });
+      this._listDrawer.addEventListener("keydown", (event) => {
+        if (event.key !== "Tab") return;
+        const controls = [...this._listDrawer.querySelectorAll("button,input,select,textarea,a[href],[tabindex]")]
+          .filter((control) => !control.disabled && control.tabIndex >= 0 && control.getClientRects().length);
+        const first = controls[0], last = controls.at(-1);
+        const active = this.shadowRoot.activeElement;
+        if ((event.shiftKey && active === first) || (!event.shiftKey && active === last)) {
+          event.preventDefault();
+          (event.shiftKey ? last : first)?.focus();
+        }
+      });
+      this._listDrawer.addEventListener("close", () => this._listDrawerToggle.setAttribute("aria-expanded", String(this._listDrawer.open)));
+      this._listDrawer.addEventListener("click", (event) => {
+        const rect = this._listDrawer.getBoundingClientRect();
+        if (event.target === this._listDrawer && (event.clientX < rect.left || event.clientX >= rect.right || event.clientY < rect.top || event.clientY >= rect.bottom)) this.closeListDrawer();
+      });
+      this._listDrawerToggle = actionButton("", () => this.openListDrawer());
+      this._listDrawerToggle.className = "drawer-toggle";
+      this._listDrawerToggle.setAttribute("aria-label", "My lists");
+      this._listDrawerToggle.setAttribute("aria-haspopup", "dialog");
+      this._listDrawerToggle.setAttribute("aria-controls", "list-selector");
+      this._listDrawerToggle.setAttribute("aria-expanded", "false");
+      const drawerIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      drawerIcon.setAttribute("viewBox", "0 0 24 24");
+      drawerIcon.setAttribute("aria-hidden", "true");
+      const drawerPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      drawerPath.setAttribute("d", "M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z");
+      drawerIcon.append(drawerPath);
+      this._listDrawerToggle.append(drawerIcon, document.createTextNode("My lists"));
+      header.append(this._listDrawerToggle);
       this._listActions = document.createElement("div");
       this._listActions.className = "list-actions";
       this._newListButton = actionButton("New list", () => {
@@ -1009,7 +1099,8 @@ class HaListsPanel extends HTMLElement {
         this._deleteListTarget = null;
         this._listError = "";
         this.render();
-        this._connectListButton.focus();
+        if (this._narrow) this.closeListDrawer();
+        else this._connectListButton.focus();
       });
       this._deleteListConfirm = document.createElement("button");
       this._deleteListConfirm.type = "submit";
@@ -1042,6 +1133,7 @@ class HaListsPanel extends HTMLElement {
         if (this._edit) {
           this._listError = "Save or cancel the task editor before removing this list from the panel.";
           this.render();
+          this.openListDrawer();
           return;
         }
         this.manageList({ type: "ha_lists/list/visibility", entity_id: this._selected, visible: false });
@@ -1420,22 +1512,25 @@ class HaListsPanel extends HTMLElement {
       article.append(this._listHeading, this._taskTools, this._searchControls, this._form, this._suggestionAnnouncement, this._editForm, this._editError, this._results);
       layout.append(listPane, article);
       this._main.append(layout);
-      this.shadowRoot.replaceChildren(style, header, this._main);
+      this.shadowRoot.replaceChildren(style, header, this._main, this._listDrawer);
     }
     const entities = this.availableLists;
     const selected = entities.find((entity) => entity.entity_id === this._selected);
     const navTitle = document.createElement("strong");
     navTitle.textContent = "My lists";
+    navTitle.hidden = this._narrow;
     const navChildren = [navTitle];
     for (const entity of entities) {
       const button = document.createElement("button");
       button.type = "button";
       button.textContent = entity.attributes?.friendly_name || entity.entity_id;
       button.setAttribute("aria-current", String(entity.entity_id === this._selected));
+      button.dataset.entityId = entity.entity_id;
       button.addEventListener("click", () => {
         if (this._selected !== entity.entity_id) this._edit = null;
         this._listMenuOpen = false;
         this._selected = entity.entity_id;
+        this.closeListDrawer();
         this.loadItems();
       });
       navChildren.push(button);
@@ -1446,7 +1541,10 @@ class HaListsPanel extends HTMLElement {
       p.textContent = "No lists selected. Open Settings → Devices & services → HA Lists → Configure to choose lists.";
       navChildren.push(p);
     }
+    const focusedEntity = this._nav.contains(this.shadowRoot.activeElement) ? this.shadowRoot.activeElement.dataset.entityId : null;
     this._nav.replaceChildren(...navChildren);
+    this.updateListLayout();
+    if (focusedEntity && this._listDrawer.open) [...this._nav.querySelectorAll("button")].find((button) => button.dataset.entityId === focusedEntity)?.focus({ preventScroll: true });
     this.renderListManagement();
     this.renderListMenu();
     this._headingActions.hidden = !selected;
