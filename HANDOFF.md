@@ -19,6 +19,12 @@
   no input blur, exercise actual Chromium composition plus touch Add and immediate
   keyboard entry, and verify confirmed additions appear first. The whole form is
   made visible before measurement so automation's initial scrolling is excluded.
+- First CI run passed the entry-geometry checks but exposed a dropped Enter in
+  list creation: a pending native task read blocked adds while retained snapshot
+  counts were already visible. A deterministic delayed-read regression reproduces
+  it. Native adds no longer depend on snapshot reads; duplicate pending writes
+  remain blocked and native service validation still applies. No browser
+  assertion or timeout was weakened to hide the race.
 - Guidance mapping: current HA custom-panel/theme/context guidance preserves the
   native shell and ha-input; pinned HA input delegatesFocus plus HTML focus and
   Pointer Events guidance inform preventScroll and retained native focus. Verify
@@ -30,7 +36,7 @@
   https://html.spec.whatwg.org/multipage/interaction.html#dom-focus-dev
   https://www.w3.org/TR/pointerevents3/#the-pointerdown-event
   https://github.com/home-assistant/frontend/blob/20261028.5/src/components/input/wa-input-mixin.ts
-- Local lint/format/syntax, 59 Python tests (97.09% coverage), 70 panel tests and
+- Local lint/format/syntax, 59 Python tests (97.09% coverage), 71 panel tests and
   the complete disposable-HA browser workflow passed. Actual Android Companion
   keyboard/viewport and manual screen-reader verification remain unverified.
   No production writes/deployment. Consult final commit's GitHub Validate status.

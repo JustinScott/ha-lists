@@ -868,6 +868,20 @@ test("same-list refresh failure retains tasks but list switching never shows the
   window.close();
 });
 
+test("Enter still adds while a native task snapshot is loading", async () => {
+  const read = deferred();
+  const { panel, window, calls } = await setup({ readItems: () => read.promise });
+  assert.equal(panel._loading, true);
+  draft(window, panel, "Fast task");
+  entryKey(window, panel, "Enter");
+  assert.equal(calls.length, 1, "a pending read must not discard an explicit native add");
+  assert.equal(calls[0].data.item, "Fast task");
+  read.resolve([]);
+  await tick(); await tick();
+  assert.equal(panel._input.value, "");
+  window.close();
+});
+
 test("an explicit Add tap submits the current composing draft once", async () => {
   for (const pointerType of ["", "touch"]) {
     const { panel, window, calls } = await setup();

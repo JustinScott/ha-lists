@@ -300,6 +300,10 @@ other todo entities
   showing another list's tasks after switching. Under the default newest-first
   sort, the native confirmed addition appears first without collapsing/rebuilding
   the page layout. Preserve explicit filters and alternate sort choices.
+- A pending native task read must not discard Add/Enter submission to an
+  available selected list. Creating a task does not require a completed task
+  snapshot; native service validation remains authoritative. Keep duplicate-write
+  prevention while the add itself is pending.
 - On failure, preserve the unsent draft and show a clear error. Do not steal focus when navigating away or changing lists while a submission is pending. Handle IME composition, pending submissions, and duplicate-submit prevention.
 - Regression-test keyboard focus, consecutive additions, and submission in the Android companion app where feasible. The browser-only pass does not establish Android-app compatibility.
 - Track implementation in [GitHub issue #1](https://github.com/JustinScott/ha-lists/issues/1). This is a **Milestone 2 core task-entry requirement**, to complete before expanding to task completion/editing. The issue is not itself evidence that the behavior is implemented.

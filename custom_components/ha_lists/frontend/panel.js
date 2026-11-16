@@ -438,7 +438,7 @@ class HaListsPanel extends HTMLElement {
   async addItem() {
     const entityId = this._selected;
     const item = this._draft.trim();
-    if (!entityId || !item || this._adding || this._loading) return;
+    if (!entityId || !item || this._adding) return;
     if (!this.availableLists.some((entity) => entity.entity_id === entityId)) return;
     this._adding = true;
     if (this.shadowRoot.activeElement !== this._input) this._input.focus({ preventScroll: true });
@@ -508,7 +508,7 @@ class HaListsPanel extends HTMLElement {
 
   chooseSuggestion(index) {
     const title = this._suggestions[index];
-    if (!title || this._adding || this._loading) return;
+    if (!title || this._adding) return;
     this._draft = this._input.value = title;
     this.addItem();
   }
@@ -1464,7 +1464,7 @@ class HaListsPanel extends HTMLElement {
     // Do not disable the focused input during a write or refresh: on Android
     // that blurs the native field and closes the soft keyboard.
     this._input.disabled = !selected || selected.state === "unavailable";
-    this._submit.disabled = this._adding || this._loading || this._input.disabled;
+    this._submit.disabled = this._adding || this._input.disabled;
     this._submit.textContent = "Add";
     this._form.setAttribute("aria-busy", String(this._adding));
     // Keep the live input value and caret intact while it has focus.
