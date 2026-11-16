@@ -100,7 +100,11 @@ Build a free, local-first, application-style list manager integrated into Home A
   Do not clear the popup on each letter or same-list native refresh.
   IME composition also refreshes nonempty drafts and invalidates older replies;
   retain the popup through a temporary empty composing replacement. Track the
-  composition session so Enter/form submission cannot accidentally add its text.
+  composition session for suggestion continuity; use the native key event's
+  `isComposing` and IME process-key code 229 to guard candidate-confirmation
+  Enter. An explicit non-composing Enter or native form submission must work
+  while a dictation session remains open. Do not use the session flag alone to
+  block submission; native browsers suppress implicit IME-confirmation submit.
   A real no-match result, non-composing blank entry, blur, Escape or selection/list change can dismiss
   it. Nothing is initially highlighted; changing the query resets selection. Arrow
   Down/Up selects an option; Enter on a selected option or tapping it adds a

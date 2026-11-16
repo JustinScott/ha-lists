@@ -1260,7 +1260,7 @@ class HaListsPanel extends HTMLElement {
       // Handle Enter explicitly: ha-input's native field lives in its own shadow DOM,
       // so relying on the surrounding form's implicit submit is unreliable on Android.
       const submitOnEnter = (event) => {
-        if (this._entryComposing || event.isComposing || event.defaultPrevented) return;
+        if (event.isComposing || event.keyCode === 229 || event.defaultPrevented) return;
         if (["ArrowDown", "ArrowUp"].includes(event.key) && this._suggestions.length) {
           event.preventDefault();
           event.stopPropagation();
@@ -1278,6 +1278,7 @@ class HaListsPanel extends HTMLElement {
         if (event.key !== "Enter" || event.isComposing || event.repeat || event.defaultPrevented) return;
         event.preventDefault();
         event.stopPropagation();
+        this._entryComposing = false;
         if (this._suggestionIndex >= 0) this.chooseSuggestion(this._suggestionIndex);
         else { this._draft = this._input.value; this.addItem(); }
       };
@@ -1319,18 +1320,9 @@ class HaListsPanel extends HTMLElement {
       this._submit.addEventListener("pointerdown", (event) => {
         if (event.button === 0 && this.shadowRoot.activeElement === this._input) event.preventDefault();
       });
-      this._submit.addEventListener("click", (event) => {
-        // An explicit tap commits the draft; an implicit IME Enter does not.
-        if (this._entryComposing && (event.pointerType || event.detail > 0)) {
-          event.preventDefault();
-          this._entryComposing = false;
-          this._draft = this._input.value;
-          this.addItem();
-        }
-      });
       this._form.addEventListener("submit", (event) => {
         event.preventDefault();
-        if (this._entryComposing) return;
+        this._entryComposing = false;
         this._draft = this._input.value;
         this.addItem();
       });

@@ -10,9 +10,9 @@ export async function verifySteadyEntry(page) {
     // A reduced viewport exercises scroll clamping while entry is in view.
     // It does not simulate an Android keyboard or Companion WebView.
     await page.setViewportSize({ width: 390, height: 430 });
-    for (const method of ["touch", "keyboard"]) {
+    for (const method of ["touch", "keyboard", "voice-action"]) {
       const title = `Steady ${method} task`;
-      if (method === "touch") {
+      if (method !== "keyboard") {
         await input.fill(title);
         await input.selectText();
         await ime.send("Input.imeSetComposition", { text: title, selectionStart: title.length, selectionEnd: title.length });
@@ -38,7 +38,14 @@ export async function verifySteadyEntry(page) {
         requestAnimationFrame(sample);
       });
       if (method === "touch") await add.tap();
-      else await input.press("Enter");
+      else if (method === "keyboard") await input.press("Enter");
+      else {
+        // Emulate the DOM signals of a keyboard action while a composition
+        // session is open; this does not operate a real microphone/keyboard.
+        await input.dispatchEvent("keydown", { key: "Enter", keyCode: 229, isComposing: true, bubbles: true, composed: true, cancelable: true });
+        assert.equal(await page.getByRole("button", { name: `Rename ${title}`, exact: true }).count(), 0);
+        await input.dispatchEvent("keydown", { key: "Enter", keyCode: 13, isComposing: false, bubbles: true, composed: true, cancelable: true });
+      }
       await page.getByRole("button", { name: `Rename ${title}`, exact: true }).waitFor();
       await page.waitForFunction((node) => node.getAttribute("aria-busy") === "false", await panel.evaluateHandle((node) => node._form));
       const trace = await page.evaluate(async () => {

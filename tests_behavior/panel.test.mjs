@@ -224,8 +224,8 @@ test("IME edits refresh suggestions, reject stale responses and preserve the pop
   await suggestionTick();
   assert.equal(requests.filter((request) => request.type === "ha_lists/suggestions").at(-1).query, "mi");
   assert.equal(panel._suggestionList.firstChild, option);
-  entryKey(window, panel, "Enter");
-  assert.equal(calls.length, 0, "composition state must guard Enter even without isComposing on the key event");
+  entryKey(window, panel, "Enter", { keyCode: 229 });
+  assert.equal(calls.length, 0, "IME process-key confirmation must not add even when isComposing is absent");
   panel._input.dispatchEvent(new window.CompositionEvent("compositionend", { bubbles: true }));
   await suggestionTick();
   draft(window, panel, "");
@@ -866,6 +866,22 @@ test("same-list refresh failure retains tasks but list switching never shows the
   await panel.loadItems();
   assert.deepEqual(visibleTitles(panel), []);
   window.close();
+});
+
+test("explicit Enter and native submit work while the dictation session remains open", async () => {
+  for (const method of ["Enter", "submit"]) {
+    const { panel, window, calls } = await setup();
+    draft(window, panel, "Dictated task");
+    panel._input.dispatchEvent(new window.CompositionEvent("compositionstart", { bubbles: true }));
+    if (method === "Enter") entryKey(window, panel, "Enter", { keyCode: 13, isComposing: false });
+    else panel._form.dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
+    await tick(); await tick();
+    assert.equal(calls.length, 1, `${method} must not be blocked by the session flag`);
+    assert.equal(calls[0].data.item, "Dictated task");
+    assert.equal(panel._input.value, "");
+    assert.equal(panel._entryComposing, false);
+    window.close();
+  }
 });
 
 test("Enter still adds while a native task snapshot is loading", async () => {

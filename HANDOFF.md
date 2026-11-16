@@ -1,5 +1,42 @@
 # HA Lists — handoff for a new local Codex session
 
+## Explicit Enter during dictation (2026-11-15)
+
+- Composition session state now controls suggestion continuity, not a blanket
+  keyboard/form submission veto. Native KeyboardEvent.isComposing or process-key
+  code 229 still guard IME candidate confirmation. A normal Enter resets the
+  session flag and submits once; native form submission remains available even
+  with an open session. Browser implicit-submit handling consumes genuine IME
+  confirmation. Removed the special pointer-click composing-submit workaround;
+  the ordinary form handles Add, including touch clicks with detail=0.
+- The previous session-wide guard deterministically rejects explicit Enter before
+  compositionend. New panel regression covers normal Enter and native submit
+  with a session open. The former blanket-veto assertion now checks the genuine
+  legacy process-key signal (229 with isComposing absent), alongside existing
+  native isComposing/repeated Enter tests. This changes the intended contract
+  for explicit dictation actions without removing candidate-confirmation safety.
+- Installed-HA Playwright keeps actual Chromium composition open, dispatches
+  emulated DOM key signals on the native HA input, rejects candidate confirmation
+  and accepts a non-composing Enter. Existing every-frame geometry, focus,
+  newest-first, touch and consecutive-entry assertions still apply. It does not
+  operate a real microphone or establish Android keyboard compatibility.
+- Guidance mapping: current HA custom-panel context/themes and pinned ha-input
+  contract retain native shell/input. Chrome's IME-safe Enter guidance specifies
+  per-key isComposing + 229 checks and native form availability; Chromium Android
+  editor actions synthesize Enter when enterkeyhint is specified. These inform
+  the narrowed guard, tested by panel event regressions and installed-HA shadow
+  input/native-write checks. Reconsulted Core AGENTS/integration knowledge,
+  HACS and official pytest guidance. No backend API, storage, dependency,
+  packaging or translation change; existing real-HA tests remain the backend gate.
+  Sources: https://developer.chrome.com/docs/modern-web-guidance/guides/forms/ime-safe-enter-submit
+  https://w3c.github.io/uievents/#dom-keyboardevent-iscomposing
+  https://contributors.home-assistant.io/frontend/custom-ui/panel/
+  https://chromium.googlesource.com/chromium/src/+/refs/heads/main/content/public/android/java/src/org/chromium/content/browser/input/ImeAdapterImpl.java
+- Local lint/format/syntax, 59 Python tests (97.09% coverage), 72 panel tests and
+  the complete disposable-HA browser workflow passed. Actual Android microphone
+  keyboard events remain unverified; do not equate emulated signals with a real
+  dictation session. No production writes/deployment. Check final commit's CI.
+
 ## Steady task entry (2026-11-15)
 
 - Add retains its label/size; disabled state and form aria-busy indicate progress.
