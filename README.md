@@ -63,7 +63,7 @@ addresses, or real Home Assistant configuration.
 
 1. Install this integration on a **development** Home Assistant instance, restart it, and add **HA Lists** under Settings → Devices & services.
 2. Open **Lists**. Administrators can use **New list** to create native Local To-do lists, or **Connect existing list** to show existing Local To-do entities. The integration's **Configure** options also retain the existing native entity selection workflow.
-3. Open the **Lists** sidebar entry. On mobile, use **My lists** in the header to open the side drawer; selecting a list closes it. On desktop, select a list in the persistent left pane. Select a task title to edit or delete it. The editor offers descriptions, due dates, and due times where the provider supports them. Due times use the browser time zone shown in the editor. Clear deadline removes both date and time. Delete asks you to confirm the task first.
+3. Open the **Lists** sidebar entry. On mobile, use **My lists** at the top right of the header to open the drawer, which slides in from the right; selecting a list closes it. On desktop, select a list in the persistent left pane. Select a task title to edit or delete it. The editor offers descriptions, due dates, and due times where the provider supports them. Due times use the browser time zone shown in the editor. Clear deadline removes both date and time. Delete asks you to confirm the task first.
 
 The integration requires Home Assistant's frontend, HTTP, panel, and to-do components. It uses Home Assistant's authenticated frontend connection; there is no separate HA Lists account or public server. The initial configuration does not require a cloud provider.
 
@@ -71,7 +71,9 @@ The integration requires Home Assistant's frontend, HTTP, panel, and to-do compo
 
 Remove the HA Lists integration entry from Settings → Devices & services, then remove the `custom_components/ha_lists` directory from the development configuration and restart Home Assistant. If the panel remains visible, refresh the browser and verify that the integration entry is gone. Native lists and tasks remain, including lists created through HA Lists.
 
-Administrators can **Remove list from panel** without deleting its data. The separate
+Administrators can **Hide from Lists** (in the cogwheel **List settings** menu) without deleting
+its data: the list and its tasks stay in Home Assistant, and **Connect existing list**
+brings it back. The separate
 **Delete list…** action permanently deletes any connected Local To-do list and all
 its tasks throughout Home Assistant, including lists created outside HA Lists.
 It requires typing the native list name and confirming. Keep a backup if needed;
@@ -102,7 +104,7 @@ by default. Matching ignores case/Unicode width/repeated spaces, prefers exact
 and prefix matches, then frequency and recency. Selecting a suggestion creates
 a new native task; it does not reopen an old task or copy old dates/notes.
 
-Administrators can open **List menu → View options → Suggestion history** to search learned
+Administrators can open **List settings (cogwheel) → View options → Suggestion history** to search learned
 labels, forget one, disable learning, change active-item exclusion, clear history,
 or rebuild from currently available completed tasks. Clear/rebuild ask for
 confirmation and never modify native tasks. History is shared, so these settings
@@ -158,17 +160,17 @@ The task toolbar starts compact. Tap the magnifying glass to expand **Search
 tasks**; an empty search collapses when you leave it or press Escape. An active
 query stays visible so you can see why tasks are filtered. **Clear search** keeps
 focus in the field. Open **View options** for the Show tasks and Sort active tasks
-selectors inside the top-right **List menu**; close it with its button or Escape. Counts and a short summary of
+selectors inside the top-right cogwheel **List settings** menu; close it with its button or Escape. Counts and a short summary of
 non-default view choices remain visible when the options are closed.
 
-The top-right list menu also holds **Remove list from panel** and **Delete list…**
-for administrators. The search icon sits beside it. The list-name section keeps
+Below View options, a **This list** section holds **Hide from Lists** and, last and in red,
+**Delete list…** for administrators. The search icon sits beside it. The list-name section keeps
 its own size when you switch lists; it does not stretch with the task pane.
 Autocomplete floats over the task UI, retains its previous results while the next
 query loads, and does not move the task rows. It can open upward when needed.
 
 If an older autocomplete version missed items that were active when history
-first initialized, use **List menu → View options → Suggestion history → Rebuild
+first initialized, use **List settings → View options → Suggestion history → Rebuild
 from completed items** after updating. This changes suggestions, not native tasks.
 New baselines now learn those tasks once when they are first completed. Clearing,
 forgetting, or disabling learning cancels the corresponding pending eligibility.

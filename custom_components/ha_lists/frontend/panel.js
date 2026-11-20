@@ -294,7 +294,7 @@ class HaListsPanel extends HTMLElement {
           : "List and its tasks deleted from Home Assistant.";
       } else {
         this._connectListOpen = false;
-        this._listNotice = request.visible ? "List connected." : "List removed from this panel. Its native tasks are unchanged.";
+        this._listNotice = request.visible ? "List connected." : "List hidden from Lists. Its tasks stay in Home Assistant.";
       }
     } catch (error) {
       if (operation === this._listOperation && operation.connection === this._connection) {
@@ -866,14 +866,14 @@ class HaListsPanel extends HTMLElement {
         header h1 { margin:0; font-size:20px; font-weight:400; }
         .drawer-toggle { margin-inline-start:auto; display:flex; align-items:center; gap:8px; min-height:44px; padding:8px 12px; font:inherit; color:inherit; background:transparent; border:1px solid currentColor; border-radius:8px; cursor:pointer; }
         .drawer-toggle svg { width:24px; height:24px; fill:currentColor; }
-        .list-drawer { box-sizing:border-box; position:fixed; inset:0 auto 0 0; margin:0; padding:0; width:min(340px,calc(100vw - 44px)); max-width:none; height:100dvh; max-height:100dvh; border:0; background:var(--card-background-color); color:var(--primary-text-color); box-shadow:var(--ha-card-box-shadow,0 6px 18px rgba(0,0,0,.22)); overscroll-behavior:contain; }
+        .list-drawer { box-sizing:border-box; position:fixed; inset:0 0 0 auto; margin:0; padding:0; width:min(340px,calc(100vw - 44px)); max-width:none; height:100dvh; max-height:100dvh; border:0; background:var(--card-background-color); color:var(--primary-text-color); box-shadow:var(--ha-card-box-shadow,0 6px 18px rgba(0,0,0,.22)); overscroll-behavior:contain; }
         .list-drawer::backdrop { background:rgba(0,0,0,.45); }
         .list-drawer[open] { animation:list-drawer-in 160ms ease-out; }
         .drawer-heading { display:flex; align-items:center; justify-content:space-between; padding:8px 18px; border-bottom:1px solid var(--divider-color); }
         .drawer-heading h2 { font-size:20px; margin:0; }
         .drawer-heading button { min-width:44px; min-height:44px; font:inherit; color:inherit; background:transparent; border:0; cursor:pointer; }
         .list-drawer .list-pane { border:0; border-radius:0; }
-        @keyframes list-drawer-in { from { transform:translateX(-100%); } to { transform:translateX(0); } }
+        @keyframes list-drawer-in { from { transform:translateX(100%); } to { transform:translateX(0); } }
         @media(prefers-reduced-motion:reduce) { .list-drawer[open] { animation:none; } }
         .layout { display:grid; grid-template-columns:minmax(220px,290px) minmax(0,1fr); gap:18px; }
         .list-pane,article { min-width:0; padding:18px; background:var(--card-background-color); border:1px solid var(--divider-color); border-radius:12px; }
@@ -884,10 +884,32 @@ class HaListsPanel extends HTMLElement {
         .heading-actions > button, .list-menu-anchor > button { display:grid; place-items:center; width:44px; height:44px; padding:10px; color:inherit; background:transparent; border:0; border-radius:8px; cursor:pointer; }
         .heading-actions svg { display:block; width:24px; height:24px; fill:currentColor; }
         .list-menu-anchor { position:relative; }
-        .list-menu { position:absolute; top:calc(100% + 4px); inset-inline-end:0; z-index:3; box-sizing:border-box; width:min(340px,calc(100vw - 64px)); max-height:min(70dvh,640px); overflow:auto; padding:12px; border:1px solid var(--divider-color); border-radius:8px; background:var(--card-background-color); box-shadow:var(--ha-card-box-shadow,0 6px 18px rgba(0,0,0,.22)); }
+        .list-menu { position:absolute; top:calc(100% + 4px); inset-inline-end:0; z-index:3; box-sizing:border-box; width:min(340px,calc(100vw - 64px)); max-height:min(70dvh,640px); overflow:auto; padding:8px; border:1px solid var(--divider-color); border-radius:12px; background:var(--card-background-color); box-shadow:var(--ha-card-box-shadow,0 6px 18px rgba(0,0,0,.22)); }
         .list-menu .list-actions { margin-top:0; }
         .list-menu.above { top:auto; bottom:calc(100% + 4px); }
-        .list-menu > button { min-height:44px; padding:8px; font:inherit; color:inherit; background:var(--secondary-background-color); border:1px solid var(--divider-color); border-radius:6px; margin-top:8px; cursor:pointer; }
+        .list-menu > button { display:flex; align-items:center; gap:12px; width:100%; min-height:44px; padding:8px; font:inherit; color:inherit; text-align:start; background:transparent; border:0; border-radius:8px; cursor:pointer; }
+        .list-menu .row-icon, .list-menu .chevron { flex:none; width:22px; height:22px; fill:currentColor; }
+        .list-menu .row-icon { color:var(--secondary-text-color); }
+        .list-menu .chevron { margin-inline-start:auto; color:var(--secondary-text-color); transition:transform 120ms ease; }
+        .list-menu > button[aria-expanded=true] .chevron { transform:rotate(180deg); }
+        .list-menu button:hover { background:var(--secondary-background-color); }
+        .list-menu .view-options { margin:0 0 4px; padding:4px 8px 8px; border:0; border-radius:0; }
+        .list-menu .filters { display:grid; gap:var(--ha-space-2,8px); margin:4px 0; }
+        .list-menu .filters label { justify-content:space-between; gap:var(--ha-space-3,12px); }
+        .list-menu .filters select { width:10.5em; }
+        .list-menu .filter-help { font-size:13px; line-height:1.4; }
+        .list-menu .list-actions { flex-direction:column; flex-wrap:nowrap; gap:0; margin:4px 0 0; padding-top:4px; border-top:1px solid var(--divider-color); }
+        .list-menu .list-actions button { display:flex; align-items:center; gap:12px; width:100%; padding:8px; text-align:start; background:transparent; border:0; border-radius:8px; cursor:pointer; }
+        .list-menu .list-actions .delete-action, .list-menu .list-actions .delete-action .row-icon { color:var(--error-color); }
+        .menu-heading { margin:8px 8px 4px; font-size:12px; font-weight:500; letter-spacing:.02em; color:var(--secondary-text-color); }
+        .menu-hint { margin:-4px 8px 4px 42px; font-size:13px; line-height:1.4; }
+        .list-menu .suggestion-history h3 { margin:0 0 4px; font-size:15px; font-weight:500; }
+        .list-menu .suggestion-history p { margin:4px 0; font-size:13px; color:var(--secondary-text-color); }
+        .list-menu .suggestion-history label { margin:2px 0; }
+        .list-menu .suggestion-history input[type=checkbox] { accent-color:var(--primary-color); }
+        .list-menu .suggestion-history > button { display:block; width:100%; margin:8px 0 0; text-align:start; }
+        .list-menu .history-results > div { padding:2px 0 2px 4px; border-bottom:1px solid var(--divider-color); margin:0; }
+        .list-menu .history-results button { min-height:36px; padding:4px 10px; }
         .list-actions { display:flex; flex-wrap:wrap; gap:var(--ha-space-2,8px); margin-top:var(--ha-space-3,12px); }
         .list-actions button, .list-form button, .pending-lists button { min-height:44px; font:inherit; padding:var(--ha-space-2,8px); color:var(--primary-text-color); background:var(--secondary-background-color); border:1px solid var(--divider-color); border-radius:var(--ha-border-radius-md,6px); }
         .list-actions .delete-action, .list-form .delete-action { color:var(--error-color); }
@@ -969,6 +991,19 @@ class HaListsPanel extends HTMLElement {
         button.type = "button";
         button.textContent = text;
         button.addEventListener("click", handler);
+        return button;
+      };
+      // Decorative MDI paths; the button text remains its accessible name.
+      const withIcon = (button, path, className = "row-icon") => {
+        const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        icon.setAttribute("viewBox", "0 0 24 24");
+        icon.setAttribute("aria-hidden", "true");
+        icon.classList.add(className);
+        const iconPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        iconPath.setAttribute("d", path);
+        icon.append(iconPath);
+        if (className === "chevron") button.append(icon);
+        else button.prepend(icon);
         return button;
       };
       this._listDrawer = document.createElement("dialog");
@@ -1129,9 +1164,9 @@ class HaListsPanel extends HTMLElement {
       this._heading = document.createElement("h2");
       this._selectedListActions = document.createElement("div");
       this._selectedListActions.className = "list-actions";
-      this._hideListButton = actionButton("Remove list from panel", () => {
+      this._hideListButton = actionButton("Hide from Lists", () => {
         if (this._edit) {
-          this._listError = "Save or cancel the task editor before removing this list from the panel.";
+          this._listError = "Save or cancel the task editor before hiding this list.";
           this.render();
           this.openListDrawer();
           return;
@@ -1143,7 +1178,15 @@ class HaListsPanel extends HTMLElement {
         if (target) this.confirmListDeletion(target);
       });
       this._deleteListButton.className = "delete-action";
-      this._selectedListActions.append(this._hideListButton, this._deleteListButton);
+      withIcon(this._hideListButton, "M11.83 9 15 12.16V12a3 3 0 0 0-3-3zm-4.3.8 1.55 1.55c-.05.21-.08.42-.08.65a3 3 0 0 0 3 3c.22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53a5 5 0 0 1-5-5c0-.79.2-1.53.53-2.2M2 4.27l2.28 2.28.45.45C3.08 8.3 1.78 10 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.43.42L19.73 22 21 20.73 3.27 3M12 7a5 5 0 0 1 5 5c0 .64-.13 1.26-.36 1.82l2.93 2.93c1.5-1.25 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-4 .7l2.17 2.15C10.74 7.13 11.35 7 12 7");
+      withIcon(this._deleteListButton, "M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6zM8 9h8v10H8zm7.5-5-1-1h-5l-1 1H5v2h14V4z");
+      const listSectionTitle = document.createElement("p");
+      listSectionTitle.className = "menu-heading";
+      listSectionTitle.textContent = "This list";
+      const hideHint = document.createElement("p");
+      hideHint.className = "menu-hint muted";
+      hideHint.textContent = "Hiding keeps the list and its tasks in Home Assistant.";
+      this._selectedListActions.append(listSectionTitle, this._hideListButton, hideHint, this._deleteListButton);
       this._taskTools = document.createElement("div");
       this._taskTools.className = "task-tools";
       this._searchToggle = actionButton("", () => {
@@ -1168,6 +1211,8 @@ class HaListsPanel extends HTMLElement {
         if (this._viewOpen) this.loadSuggestionHistory();
       });
       this._viewToggle.setAttribute("aria-controls", "task-view-options");
+      withIcon(this._viewToggle, "M3 17v2h6v-2zM3 5v2h10V5zm10 16v-2h8v-2h-8v-2h-2v6zM7 9v2H3v2h4v2h2V9zm14 4v-2H11v2zm-6-4h2V7h4V5h-4V3h-2z");
+      withIcon(this._viewToggle, "M7.41 8.58 12 13.17l4.59-4.59L18 10l-6 6-6-6z", "chevron");
       this._viewOptions = document.createElement("section");
       this._viewOptions.id = "task-view-options";
       this._viewOptions.className = "view-options";
@@ -1311,21 +1356,21 @@ class HaListsPanel extends HTMLElement {
         if (this._listMenuOpen) this._listMenu.scrollTop = 0;
         if (this._listMenuOpen && this._viewOpen) this.loadSuggestionHistory();
       });
-      this._listMenuToggle.setAttribute("aria-label", "List menu");
-      this._listMenuToggle.title = "List menu";
+      this._listMenuToggle.setAttribute("aria-label", "List settings");
+      this._listMenuToggle.title = "List settings";
       this._listMenuToggle.setAttribute("aria-controls", "list-menu");
       const listMenuIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
       listMenuIcon.setAttribute("viewBox", "0 0 24 24");
       listMenuIcon.setAttribute("aria-hidden", "true");
       const listMenuPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
-      listMenuPath.setAttribute("d", "M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z");
+      listMenuPath.setAttribute("d", "M12 15.5A3.5 3.5 0 0 1 8.5 12 3.5 3.5 0 0 1 12 8.5a3.5 3.5 0 0 1 3.5 3.5 3.5 3.5 0 0 1-3.5 3.5m7.43-2.53c.04-.32.07-.64.07-.97s-.03-.66-.07-1l2.11-1.63c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.31-.61-.22l-2.49 1c-.52-.39-1.06-.73-1.69-.98l-.37-2.65A.506.506 0 0 0 14 2h-4c-.25 0-.46.18-.5.42l-.37 2.65c-.63.25-1.17.59-1.69.98l-2.49-1c-.22-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64L4.57 11c-.04.34-.07.67-.07 1s.03.65.07.97l-2.11 1.66c-.19.15-.25.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1.01c.52.4 1.06.74 1.69.99l.37 2.65c.04.24.25.42.5.42h4c.25 0 .46-.18.5-.42l.37-2.65c.63-.26 1.17-.59 1.69-.99l2.49 1.01c.22.08.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64z");
       listMenuIcon.append(listMenuPath);
       this._listMenuToggle.append(listMenuIcon);
       this._listMenu = document.createElement("section");
       this._listMenu.id = "list-menu";
       this._listMenu.className = "list-menu";
-      this._listMenu.setAttribute("aria-label", "List actions and view options");
-      this._listMenu.append(this._selectedListActions, this._viewToggle, this._viewOptions);
+      this._listMenu.setAttribute("aria-label", "List settings");
+      this._listMenu.append(this._viewToggle, this._viewOptions, this._selectedListActions);
       this._listMenuAnchor.append(this._listMenuToggle, this._listMenu);
       this._listMenu.addEventListener("keydown", (event) => {
         if (event.key === "Escape" && !event.defaultPrevented) {

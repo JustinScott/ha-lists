@@ -14,6 +14,10 @@ export async function verifyListDrawer({ page, listName, secondName }) {
   await toggle.tap();
   await drawer.waitFor();
   await drawer.evaluate(async (node) => Promise.all(node.getAnimations().map((animation) => animation.finished)));
+  const drawerBox = await drawer.boundingBox();
+  const viewportWidth = page.viewportSize().width;
+  assert.ok(Math.abs(drawerBox.x + drawerBox.width - viewportWidth) <= 1, "list drawer must sit against the right edge");
+  assert.ok(drawerBox.x >= 44, "list drawer must leave backdrop visible on the left");
   assert.ok(await drawer.getByRole("button", { name: listName, exact: true }).evaluate((node) => node === node.getRootNode().activeElement));
   for (let index = 0; index < 12; index++) {
     await page.keyboard.press("Tab");
@@ -30,7 +34,7 @@ export async function verifyListDrawer({ page, listName, secondName }) {
   const after = await input.boundingBox();
   assert.ok(Math.abs(after.y - before.y) <= 1, "drawer must not shift task entry");
   await openListSelector(page);
-  await page.mouse.click(380, 150);
+  await page.mouse.click(10, 150);
   await drawer.waitFor({ state: "hidden" });
   await chooseList(page, secondName);
   await page.getByRole("heading", { name: secondName, exact: true }).waitFor();

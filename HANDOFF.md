@@ -1,5 +1,22 @@
 # HA Lists — handoff for a new local Codex session
 
+## List settings menu and right-side drawer (2026-11-20)
+
+- The mobile **My lists** drawer now slides in from the right, next to its header
+  button; backdrop dismissal is on the left. The task heading's former hamburger
+  "List menu" is a cogwheel named **List settings**. Its menu shows View options
+  first, then a "This list" section with **Hide from Lists** (renamed from "Remove
+  list from panel", with a hint that tasks stay in HA) and red **Delete list…**.
+  Styling only: full-width rows, decorative aria-hidden MDI icons, one card
+  instead of nested boxes, aligned selects. No backend, storage, permission,
+  translation or packaging change; native disclosure/select semantics retained.
+- Tests: new panel regression for name/order/icon semantics; browser drawer check
+  asserts right-edge placement and clicks the left backdrop; browser helpers use
+  the new names; two new screenshots (list-settings-mobile, -view-mobile).
+  Local: lint/format/syntax, 59 Python tests (97.09%), 74 panel tests and the full
+  installed-HA browser workflow (native-process mode) passed. Android Companion
+  and screen-reader checks remain unverified.
+
 ## Narrow-screen list drawer (2026-11-15)
 
 - HA-supplied narrow mode places the existing list pane inside a native modal
@@ -9,7 +26,7 @@
   selection closes the drawer, restores opener focus and retains the quick draft.
 - Native dialog supplies modal background inertness; explicit Tab/Shift+Tab
   boundary wrapping keeps focus out of browser chrome. Close, Escape and backdrop
-  dismissal work. Opening slides from the left; reduced motion disables animation.
+  dismissal work. Opening slides from the left (now from the right, 2026-11-20); reduced motion disables animation.
   Resizing to desktop closes the modal and restores the inline pane. Close it on
   unload. Preserve focused list identity through native navigation rerenders.
 - New/Connect stay in the drawer. Deletion confirmation/errors open it on narrow

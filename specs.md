@@ -24,8 +24,8 @@ Build a free, local-first, application-style list manager integrated into Home A
 - Register a dedicated **Lists** sidebar entry opening a full-page panel, not a collection of scattered dashboard cards.
 - Beacon-inspired clean task list, but **show full list names**, not icon-only list navigation.
 - Desktop: persistent named-list sidebar, item counts, search, main list pane; optionally resizable split layout.
-- Android/narrow layout: a labelled hamburger “My lists” control opens a modal
-  drawer from the side, showing full list names and New/Connect controls. Keep
+- Android/narrow layout: a labelled “My lists” control at the header's
+  top-right opens a modal drawer that slides in from the right (2026-11-20), showing full list names and New/Connect controls. Keep
   the selector out of normal page flow so the task pane occupies the screen.
   Selecting any list closes the drawer and restores focus to its opener. Provide
   Close, Escape and backdrop dismissal, contained keyboard focus, reduced-motion
@@ -131,7 +131,7 @@ Build a free, local-first, application-style list manager integrated into Home A
   Native task permissions still govern all additions. Query/history endpoints
   require authentication, current selection and native list read permission.
   Administrative history queries and mutations require an administrator.
-- Under List menu → View options provide searchable learned labels (20 results maximum),
+- Under List settings → View options provide searchable learned labels (20 results maximum),
   individual Forget, learning/exclude-active toggles, and confirmed Clear history
   and Rebuild from available completed items. These affect shared history only,
   never native tasks. Clearing/forgetting retains seen UIDs so unchanged old
@@ -373,6 +373,14 @@ other todo entities
   heading with the existing focus/query behavior. The native HA sidebar button
   remains separate in the top-left shell header. Constrain floating controls
   to available viewport space without stealing input focus.
+- List settings menu (approved 2026-11-20): the heading control uses a cogwheel
+  icon and the accessible name “List settings”. The menu shows the View options
+  disclosure first and a “This list” section last, separated by a divider:
+  **Hide from Lists** (renamed from “Remove list from panel”; a short hint says
+  the list and its tasks stay in Home Assistant) followed by **Delete list…** in
+  the error color. Rows are full-width with decorative `aria-hidden` icons; the
+  nested bordered box, raised button styling and mismatched control widths are
+  removed. Native selects, checkboxes and disclosure semantics are unchanged.
 - The desktop left list selector must retain its width/height when switching between
   lists with different task counts. Do not stretch it to the right panel's
   content height or change name wrapping with selected font weight. Explicit

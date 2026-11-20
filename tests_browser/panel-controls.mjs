@@ -21,12 +21,12 @@ export async function clickListManagement(page, name) {
 }
 
 export async function openListMenu(page) {
-  const menu = page.getByRole("button", { name: "List menu", exact: true });
+  const menu = page.getByRole("button", { name: "List settings", exact: true });
   if (await menu.getAttribute("aria-expanded") !== "true") await menu.click();
 }
 
 export async function closeListMenu(page) {
-  const menu = page.getByRole("button", { name: "List menu", exact: true });
+  const menu = page.getByRole("button", { name: "List settings", exact: true });
   if (await menu.getAttribute("aria-expanded") === "true") await menu.click();
 }
 

@@ -39,7 +39,10 @@ export async function verifyCompactControls(page) {
   if (process.env.HA_LISTS_SCREENSHOT_DIR) {
     await mkdir(process.env.HA_LISTS_SCREENSHOT_DIR, { recursive: true });
     await page.screenshot({ path: join(process.env.HA_LISTS_SCREENSHOT_DIR, "compact-mobile.png"), fullPage: true });
+    await openListMenu(page);
+    await page.screenshot({ path: join(process.env.HA_LISTS_SCREENSHOT_DIR, "list-settings-mobile.png"), fullPage: true });
     await clickListAction(page, "View options");
+    await page.screenshot({ path: join(process.env.HA_LISTS_SCREENSHOT_DIR, "list-settings-view-mobile.png"), fullPage: true });
     await searchButton.click();
     await page.screenshot({ path: join(process.env.HA_LISTS_SCREENSHOT_DIR, "expanded-mobile.png"), fullPage: true });
     await search.press("Escape");

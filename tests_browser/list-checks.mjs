@@ -104,7 +104,7 @@ export async function verifyListManagement({ browser, page, native, base, token,
     await page.getByRole("button", { name: "Rename Beta task", exact: true }).waitFor();
     const betaTasks = await items(betaId);
     await choose(alpha);
-    await clickListAction(page, "Remove list from panel");
+    await clickListAction(page, "Hide from Lists");
     await listButton(observer, alpha).waitFor({ state: "detached" });
     assert.deepEqual(await items(alphaId), alphaTasks);
     await clickListManagement(page, "New list");

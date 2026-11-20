@@ -265,6 +265,26 @@ test("IME edits refresh suggestions, reject stale responses and preserve the pop
   window.close();
 });
 
+test("list settings menu groups view options above clearly named list actions", async () => {
+  const { panel, window } = await setup({ management: { available: [], deletable: {}, pending: [] } });
+  assert.equal(panel._listMenuToggle.getAttribute("aria-label"), "List settings");
+  assert.equal(panel._listMenu.getAttribute("aria-label"), "List settings");
+  panel._listMenuToggle.click();
+  const order = [...panel._listMenu.children];
+  assert.ok(order.indexOf(panel._viewToggle) < order.indexOf(panel._selectedListActions),
+    "view options come before list actions");
+  assert.equal(panel._hideListButton.textContent, "Hide from Lists");
+  assert.equal(panel._viewToggle.textContent, "View options");
+  assert.match(panel._selectedListActions.textContent, /keeps the list and its tasks in Home Assistant/);
+  const children = [...panel._selectedListActions.children];
+  assert.ok(children.indexOf(panel._hideListButton) < children.indexOf(panel._deleteListButton),
+    "destructive delete is last");
+  for (const button of [panel._viewToggle, panel._hideListButton, panel._deleteListButton]) {
+    assert.ok([...button.querySelectorAll("svg")].every((icon) => icon.getAttribute("aria-hidden") === "true"));
+  }
+  window.close();
+});
+
 test("list actions are disclosed from the heading menu with keyboard close and retained drafts", async () => {
   const { panel, window } = await setup({ management: { available: [], deletable: {}, pending: [] } });
   draft(window, panel, "Unsent menu draft");
@@ -464,7 +484,7 @@ test("existing lists connect and hide independently of destructive deletion", as
   panel._hideListButton.click();
   await tick(); await tick();
   assert.deepEqual([...panel._configured], ["todo.hardware"]);
-  assert.match(panel._listNoticeElement.textContent, /native tasks are unchanged/);
+  assert.match(panel._listNoticeElement.textContent, /tasks stay in Home Assistant/);
   assert.equal(requests.filter((request) => request.type === "ha_lists/list/delete").length, 0);
   assert.equal(calls.length, 0);
   panel.remove(); window.close();
