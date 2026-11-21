@@ -26,16 +26,18 @@ ASSISTANT_NAMES = {
 
 
 def _cloud_assistants(hass: HomeAssistant) -> list[str]:
-    """Offer cloud assistants only when Home Assistant Cloud can use them."""
+    """Offer cloud assistants only when Home Assistant Cloud can use them.
+
+    Reads the loaded cloud object instead of importing the optional cloud
+    package, which pulls in heavy dependencies (the same data
+    ``cloud.async_is_logged_in`` checks).
+    """
     if "cloud" not in hass.config.components:
         return []
-    # Imported lazily: the cloud package is optional and only loaded when in use.
-    from homeassistant.components import cloud  # noqa: PLC0415
-
-    if not cloud.async_is_logged_in(hass):
+    cloud = hass.data.get("cloud")
+    if not getattr(cloud, "is_logged_in", False):
         return []
-    client = getattr(hass.data.get(cloud.DATA_CLOUD), "client", None)
-    prefs = getattr(client, "prefs", None)
+    prefs = getattr(getattr(cloud, "client", None), "prefs", None)
     assistants = []
     if getattr(prefs, "alexa_enabled", True):
         assistants.append(ALEXA)

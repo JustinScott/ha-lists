@@ -3,7 +3,6 @@
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import patch
 
 from aiohttp import ClientWebSocketResponse
 from homeassistant.auth.models import User
@@ -177,38 +176,39 @@ async def test_cloud_assistants_follow_home_assistant_cloud_preferences(
     hass: HomeAssistant, owner_socket: ClientWebSocketResponse
 ) -> None:
     """Alexa/Google appear only when signed in to HA Cloud and enabled there."""
-    from homeassistant.components import cloud  # noqa: PLC0415
-
     assert await async_setup_component(hass, "homeassistant", {})
     entity_id = (await create(owner_socket, "Groceries"))["entity_id"]
     prefs = SimpleNamespace(alexa_enabled=True, google_enabled=False)
-    hass.data[cloud.DATA_CLOUD] = SimpleNamespace(client=SimpleNamespace(prefs=prefs))
-    hass.config.components.add("cloud")
+    cloud = SimpleNamespace(is_logged_in=False, client=SimpleNamespace(prefs=prefs))
+    hass.data["cloud"] = cloud
 
     async def assistants() -> list[str]:
         state = await request(owner_socket, type="ha_lists/state")
         voice = state["result"]["management"]["voice"]
         return [assistant["id"] for assistant in voice["assistants"]]
 
-    with patch.object(cloud, "async_is_logged_in", return_value=False):
-        assert await assistants() == ["conversation"]
-    with patch.object(cloud, "async_is_logged_in", return_value=True):
-        assert await assistants() == ["conversation", "cloud.alexa"]
-        prefs.google_enabled = True
-        assert await assistants() == [
-            "conversation",
-            "cloud.alexa",
-            "cloud.google_assistant",
-        ]
-        response = await request(
-            owner_socket,
-            type="ha_lists/list/voice",
-            entity_id=entity_id,
-            assistant="cloud.alexa",
-            exposed=True,
-        )
-        assert response["success"], response
-        exposure = response["result"]["management"]["voice"]["exposure"][entity_id]
-        assert exposure["cloud.alexa"] is True
-        options = er.async_get(hass).async_get(entity_id).options
-        assert options["cloud.alexa"]["should_expose"] is True
+    cloud.is_logged_in = True
+    assert await assistants() == ["conversation"], "cloud component not loaded"
+    hass.config.components.add("cloud")
+    cloud.is_logged_in = False
+    assert await assistants() == ["conversation"]
+    cloud.is_logged_in = True
+    assert await assistants() == ["conversation", "cloud.alexa"]
+    prefs.google_enabled = True
+    assert await assistants() == [
+        "conversation",
+        "cloud.alexa",
+        "cloud.google_assistant",
+    ]
+    response = await request(
+        owner_socket,
+        type="ha_lists/list/voice",
+        entity_id=entity_id,
+        assistant="cloud.alexa",
+        exposed=True,
+    )
+    assert response["success"], response
+    exposure = response["result"]["management"]["voice"]["exposure"][entity_id]
+    assert exposure["cloud.alexa"] is True
+    options = er.async_get(hass).async_get(entity_id).options
+    assert options["cloud.alexa"]["should_expose"] is True
