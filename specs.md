@@ -181,6 +181,22 @@ other todo entities
 - Provide reusable scripts or documented examples for voice add, mark complete and read-list operations, subject to supported Assist intents.
 - Preserve the ability for future automations to add items even when the custom panel is closed.
 - Do not claim universal voice support without end-to-end tests in the configured Assist pipeline.
+- Voice access in the panel (approved 2026-11-20): List settings shows a "Voice
+  assistants" section for administrators with one checkbox per available
+  assistant: Assist (`conversation`) always; Alexa and Google Assistant only when
+  Home Assistant Cloud is signed in and that assistant is enabled. Checkboxes
+  read and write Home Assistant's native per-entity exposure
+  (`exposed_entities`), never a copy; reading must not store defaults. Changes
+  require an administrator, are limited to lists connected to HA Lists, and are
+  pushed to open panels when exposure changes anywhere (including HA settings).
+- Native Assist phrase matrix (2026-11-20): `tests_ha/test_assist_phrases.py`
+  runs common phrases through the real default conversation agent against
+  Local To-do lists. Supported phrases must pass; known gaps (multiple items per
+  request, duplicates, articles, near-miss and partial names, "mark as done",
+  "cross off", reading a list back) are strict expected failures that describe
+  the desired outcome. Unrecognized requests must never change a list. The
+  browser workflow toggles Assist in the panel and verifies
+  `/api/conversation/process` adds to the list only while exposed.
 
 ## 5. Home Assistant integration implementation standards
 

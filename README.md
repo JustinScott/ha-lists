@@ -83,10 +83,38 @@ connect it, or explicitly confirm deletion of the pending list.
 
 ## Supported features and current limitations
 
-- **Available:** One local HA Lists config entry; administrator creation, connection, hiding and confirmed deletion of native Local To-do lists; named-list sidebar; task retrieval, creation, renaming, completion, reopening, and deletion; local per-list autocomplete/history for Local To-do; task title/description search; All/Active/Completed/Due today/Overdue filters; newest/oldest active-task sorting; loading and error messages.
-- **Not yet available:** Creating/deleting third-party lists; rich metadata; cross-list suggestion sharing or fuzzy matching; Assist-specific routing; provider migration or import/export. Third-party import/export versus live editing remains a future design discussion; existing bindings and data are preserved.
+- **Available:** One local HA Lists config entry; administrator creation, connection, hiding and confirmed deletion of native Local To-do lists; named-list sidebar; task retrieval, creation, renaming, completion, reopening, and deletion; local per-list autocomplete/history for Local To-do; task title/description search; All/Active/Completed/Due today/Overdue filters; newest/oldest active-task sorting; per-list voice-assistant access (Assist, and Alexa/Google with Home Assistant Cloud); loading and error messages.
+- **Not yet available:** Creating/deleting third-party lists; rich metadata; cross-list suggestion sharing or fuzzy matching; Assist phrases beyond Home Assistant's built-in sentences (see Voice assistants); provider migration or import/export. Third-party import/export versus live editing remains a future design discussion; existing bindings and data are preserved.
 
 The underlying `todo` integrations remain the source of truth for tasks. Removing HA Lists does not intentionally remove provider tasks. Provider capabilities vary; not every provider exposes completed items or rich task fields.
+
+## Voice assistants
+
+Administrators can choose which voice assistants may use a list under
+**List settings (cogwheel) → Voice assistants**. **Assist** is always offered;
+**Amazon Alexa** and **Google Assistant** appear when Home Assistant Cloud is
+signed in and that assistant is enabled there. These checkboxes change Home
+Assistant's own setting (Settings → Voice assistants → Expose), so changes made
+in either place show up in both. Lists are not exposed by default unless Home
+Assistant's "Expose new entities" option is on.
+
+Voice requests are handled by Home Assistant's built-in Assist, not by HA Lists.
+With a list exposed, these work today (list "Groceries"):
+
+- Add: "add bread to groceries", "add bread to my groceries list",
+  "put bread on the groceries list". Items are saved with a capital first letter.
+- Check off: "check off milk from groceries", "complete eggs on groceries".
+- Remove: "remove eggs from groceries".
+- Other names: entity aliases set in Home Assistant (for example "chores" for
+  "House Chores") are understood.
+
+Not supported by Assist yet: several items in one request ("butter and bread" is
+saved as one item), reading a list back ("what's on my groceries list"),
+near-miss names ("grocery" for "Groceries"), "mark … as done", requests without
+a list name, and duplicate prevention. `tests_ha/test_assist_phrases.py` records
+this behavior against the real Assist agent; gaps are expected failures that the
+test run reports once they start working. Hands-free use needs a voice satellite
+(wake-word device) in your Assist pipeline.
 
 ## Task suggestions (Local To-do)
 

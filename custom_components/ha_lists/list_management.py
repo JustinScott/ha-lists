@@ -11,6 +11,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 
 from .const import CONF_CREATED_ENTRIES, CONF_LISTS, DOMAIN
+from .voice import set_exposure, voice_state
 
 ERRORS = {
     "not_loaded": "HA Lists is not loaded. Reload the integration and try again.",
@@ -21,6 +22,7 @@ ERRORS = {
     "not_deletable": "Only connected Local To-do lists can be deleted here.",
     "local_only": "Only native Local To-do lists can be connected here.",
     "confirmation_changed": "The list name changed. Reopen the deletion confirmation.",
+    "assistant_unavailable": "That voice assistant is not available in Home Assistant.",
 }
 
 
@@ -96,6 +98,7 @@ def state_for_user(hass: HomeAssistant, user: User) -> dict[str, Any]:
             ],
             "deletable": deletable,
             "pending": pending,
+            "voice": voice_state(hass, lists),
         }
     return {"lists": lists, "management": management}
 
@@ -163,6 +166,22 @@ def set_list_visible(
     hass.config_entries.async_update_entry(
         entry, options={**entry.options, CONF_LISTS: selected}
     )
+
+
+def set_list_voice(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    entity_id: str,
+    assistant: str,
+    exposed: bool,
+) -> None:
+    """Change native voice exposure for a list that is connected to HA Lists."""
+    if entity_id not in entry.options.get(CONF_LISTS, []) or not hass.states.get(
+        entity_id
+    ):
+        raise ListManagementError("missing_list")
+    if not set_exposure(hass, entity_id, assistant, exposed):
+        raise ListManagementError("assistant_unavailable")
 
 
 async def async_delete_list(

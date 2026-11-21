@@ -34,6 +34,9 @@
     },
     "confirmation_changed": {
       "message": "The list name changed. Reopen the deletion confirmation."
+    },
+    "assistant_unavailable": {
+      "message": "That voice assistant is not available in Home Assistant."
     }
   },
   "options": {

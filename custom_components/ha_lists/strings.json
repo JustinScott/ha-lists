@@ -18,7 +18,8 @@
     "missing_list": { "message": "This to-do list is no longer available. Refresh the lists." },
     "not_deletable": { "message": "Only connected Local To-do lists can be deleted here." },
     "local_only": { "message": "Only native Local To-do lists can be connected here." },
-    "confirmation_changed": { "message": "The list name changed. Reopen the deletion confirmation." }
+    "confirmation_changed": { "message": "The list name changed. Reopen the deletion confirmation." },
+    "assistant_unavailable": { "message": "That voice assistant is not available in Home Assistant." }
   },
   "options": {
     "step": {

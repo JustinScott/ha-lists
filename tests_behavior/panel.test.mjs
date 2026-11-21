@@ -265,6 +265,72 @@ test("IME edits refresh suggestions, reject stale responses and preserve the pop
   window.close();
 });
 
+function voiceManagement(exposure, assistants = [{ id: "conversation", name: "Assist" }]) {
+  return { available: [], deletable: {}, pending: [], voice: { assistants, exposure } };
+}
+
+test("voice section shows native exposure per list and is hidden without voice support", async () => {
+  const lists = ["todo.groceries", "todo.house"];
+  const assistants = [{ id: "conversation", name: "Assist" }, { id: "cloud.alexa", name: "Amazon Alexa" }];
+  const { panel, window } = await setup({ lists, management: voiceManagement({
+    "todo.groceries": { conversation: true, "cloud.alexa": false },
+    "todo.house": { conversation: false, "cloud.alexa": true },
+  }, assistants) });
+  panel._listMenuToggle.click();
+  const order = [...panel._listMenu.children];
+  assert.ok(order.indexOf(panel._viewOptions) < order.indexOf(panel._voiceSection));
+  assert.ok(order.indexOf(panel._voiceSection) < order.indexOf(panel._selectedListActions));
+  assert.equal(panel._voiceSection.hidden, false);
+  const boxes = () => [...panel._voiceSection.querySelectorAll("input[type=checkbox]")];
+  assert.deepEqual(boxes().map((box) => box.parentElement.textContent), ["Assist", "Amazon Alexa"]);
+  assert.deepEqual(boxes().map((box) => box.checked), [true, false]);
+  assert.match(panel._voiceHint.textContent, /Add milk to todo\.groceries/);
+  panel._selected = "todo.house";
+  panel.render();
+  assert.deepEqual(boxes().map((box) => box.checked), [false, true]);
+  window.close();
+  for (const management of [null, voiceManagement({}, []), { available: [], deletable: {}, pending: [], voice: null }]) {
+    const { panel: other, window: otherWindow } = await setup({ management });
+    other._listMenuToggle.click();
+    assert.equal(other._voiceSection.hidden, true);
+    otherWindow.close();
+  }
+});
+
+test("voice changes send one native request, keep the choice while pending and restore on failure", async () => {
+  let pending;
+  const { panel, window, requests } = await setup({
+    management: voiceManagement({ "todo.groceries": { conversation: false } }),
+    manageLists: (request) => new Promise((resolve, reject) => { pending = { request, resolve, reject }; }),
+  });
+  draft(window, panel, "Voice draft");
+  panel._listMenuToggle.click();
+  const box = panel._voiceSection.querySelector("input");
+  box.click();
+  await tick();
+  assert.deepEqual(JSON.parse(JSON.stringify(pending.request)), { type: "ha_lists/list/voice", entity_id: "todo.groceries", assistant: "conversation", exposed: true });
+  assert.equal(box.checked, true, "pending choice stays visible");
+  assert.equal(panel._voiceSection.getAttribute("aria-busy"), "true");
+  box.click();
+  await tick();
+  assert.equal(requests.filter((request) => request.type === "ha_lists/list/voice").length, 1, "no duplicate request while pending");
+  assert.equal(box.checked, true);
+  pending.resolve({ lists: ["todo.groceries"], management: voiceManagement({ "todo.groceries": { conversation: true } }) });
+  await tick(); await tick();
+  assert.equal(box.checked, true);
+  assert.equal(panel._voiceSection.getAttribute("aria-busy"), "false");
+  box.click();
+  await tick();
+  pending.reject(Object.assign(new Error("That voice assistant is not available in Home Assistant."), { code: "assistant_unavailable" }));
+  await tick(); await tick();
+  assert.equal(box.checked, true, "failed change shows the stored setting again");
+  assert.match(panel._voiceErrorElement.textContent, /not available/);
+  assert.equal(panel._voiceErrorElement.hidden, false);
+  assert.equal(panel._listMenu.hidden, false, "error stays in the open menu");
+  assert.equal(panel._input.value, "Voice draft");
+  window.close();
+});
+
 test("list settings menu groups view options above clearly named list actions", async () => {
   const { panel, window } = await setup({ management: { available: [], deletable: {}, pending: [] } });
   assert.equal(panel._listMenuToggle.getAttribute("aria-label"), "List settings");

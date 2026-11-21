@@ -17,6 +17,7 @@ import { verifyCompactControls } from "./compact-checks.mjs";
 import { verifySuggestions } from "./suggestion-checks.mjs";
 import { verifyListDrawer } from "./drawer-checks.mjs";
 import { verifySteadyEntry } from "./entry-checks.mjs";
+import { verifyVoiceAccess } from "./voice-checks.mjs";
 
 const docker = promisify(execFile);
 const image = "ghcr.io/home-assistant/home-assistant:2026.11.1";
@@ -168,7 +169,7 @@ test("native To-do and HA Lists share task changes across browser sessions", { t
     let base;
     if (process.env.HA_TEST_PYTHON) {
       nativeRuntime = await startNative(process.env.HA_TEST_PYTHON, components,
-        "frontend:\nconfig:\ntodo:\n", onboarding);
+        "frontend:\nconfig:\ntodo:\nconversation:\n", onboarding);
       base = nativeRuntime.base;
     } else {
       await docker("docker", [
@@ -176,7 +177,7 @@ test("native To-do and HA Lists share task changes across browser sessions", { t
         "--entrypoint", "/bin/sh", image, "-c",
         'mkdir -p /config/.storage && printf "%s" "$1" > /config/configuration.yaml && ' +
         'printf "%s" "$2" > /config/.storage/onboarding && exec /init',
-        "ha-lists", "frontend:\nconfig:\ntodo:\n", onboarding,
+        "ha-lists", "frontend:\nconfig:\ntodo:\nconversation:\n", onboarding,
       ], { timeout: 480_000 });
       created = true;
       await docker("docker", ["cp", components, `${name}:/config/`], { timeout: 30_000 });
@@ -225,6 +226,7 @@ test("native To-do and HA Lists share task changes across browser sessions", { t
     await verifyPanelNavigation(lists);
     await verifyListDrawer({ page: lists, listName, secondName });
     await verifyCompactControls(lists);
+    await verifyVoiceAccess({ page: lists, base, token, post, entityId, listName });
     const quickAdd = lists.locator("ha-lists-panel ha-input input");
     await lists.locator("ha-lists-panel ha-input").evaluate(async (input) => {
       await input.updateComplete;

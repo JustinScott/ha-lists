@@ -15,8 +15,10 @@ from .list_management import (
     async_create_list,
     async_delete_list,
     set_list_visible,
+    set_list_voice,
     state_for_user,
 )
+from .voice import ASSISTANT_NAMES
 
 
 @websocket_api.websocket_command({vol.Required("type"): "ha_lists/lists"})
@@ -128,6 +130,41 @@ async def ws_visibility(
 
 @websocket_api.websocket_command(
     {
+        vol.Required("type"): "ha_lists/list/voice",
+        vol.Required("entity_id"): vol.All(cv.entity_id, vol.Match(r"^todo\.")),
+        vol.Required("assistant"): vol.In(list(ASSISTANT_NAMES)),
+        vol.Required("exposed"): bool,
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_voice(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict
+) -> None:
+    """Expose a connected list to a voice assistant, or stop exposing it."""
+    try:
+        async with hass.data.setdefault(LIST_LOCK, asyncio.Lock()):
+            set_list_voice(
+                hass,
+                active_entry(hass),
+                msg["entity_id"],
+                msg["assistant"],
+                msg["exposed"],
+            )
+    except ListManagementError as err:
+        connection.send_error(
+            msg["id"],
+            err.translation_key,
+            str(err),
+            translation_domain=err.translation_domain,
+            translation_key=err.translation_key,
+        )
+        return
+    connection.send_result(msg["id"], state_for_user(hass, connection.user))
+
+
+@websocket_api.websocket_command(
+    {
         vol.Required("type"): "ha_lists/list/delete",
         vol.Required("entry_id"): str,
         vol.Required("confirm_name"): vol.All(str, vol.Length(min=1, max=255)),
@@ -166,6 +203,7 @@ def register_commands(hass: HomeAssistant) -> None:
         ws_subscribe,
         ws_create,
         ws_visibility,
+        ws_voice,
         ws_delete,
     ):
         websocket_api.async_register_command(hass, command)

@@ -16,6 +16,7 @@ from .const import CONF_CREATED_ENTRIES, DOMAIN, SIGNAL_LISTS_UPDATED
 from .list_websocket import register_commands
 from .suggestion_websocket import register_commands as register_suggestion_commands
 from .suggestions import CATALOG, SuggestionCatalog
+from .voice import listen as listen_voice
 
 PANEL_PATH = "ha-lists"
 ASSET_URL = "/ha_lists_static"
@@ -73,6 +74,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     hass.data[CATALOG] = catalog
     catalog.sync()
     entry.async_on_unload(entry.add_update_listener(async_entry_updated))
+    entry.async_on_unload(
+        listen_voice(hass, lambda: async_dispatcher_send(hass, SIGNAL_LISTS_UPDATED))
+    )
     async_dispatcher_send(hass, SIGNAL_LISTS_UPDATED)
 
 

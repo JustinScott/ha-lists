@@ -18,6 +18,8 @@ class HaListsPanel extends HTMLElement {
     this._configurationRequestId = 0;
     this._configurationSubscription = null;
     this._listOperation = null;
+    this._voiceOperation = null;
+    this._voiceError = "";
     this._listError = "";
     this._listNotice = "";
     this._newListOpen = false;
@@ -308,6 +310,73 @@ class HaListsPanel extends HTMLElement {
         if (this._listError) this.openListDrawer();
       }
     }
+  }
+
+  async setVoiceExposure(assistant, exposed) {
+    const entityId = this._selected;
+    if (!this._management?.voice || this._voiceOperation || !entityId) {
+      this.renderVoice();
+      return;
+    }
+    const operation = { connection: this._connection, entityId, assistant, exposed };
+    this._voiceOperation = operation;
+    this._voiceError = "";
+    this.renderVoice();
+    try {
+      const response = await operation.connection.sendMessagePromise({
+        type: "ha_lists/list/voice", entity_id: entityId, assistant, exposed,
+      });
+      if (operation !== this._voiceOperation || operation.connection !== this._connection || !this.isConnected) return;
+      ++this._configurationRequestId;
+      this.applyConfiguration(response);
+    } catch (error) {
+      if (operation === this._voiceOperation && operation.connection === this._connection) {
+        this._voiceError = "Could not change voice access: " + (error?.message || String(error));
+      }
+    } finally {
+      if (operation === this._voiceOperation) {
+        this._voiceOperation = null;
+        this.renderVoice();
+      }
+    }
+  }
+
+  renderVoice() {
+    if (!this._voiceSection) return;
+    const voice = this._management?.voice;
+    const assistants = voice?.assistants || [];
+    this._voiceSection.hidden = !this._selected || !assistants.length;
+    const key = JSON.stringify(assistants);
+    if (key !== this._voiceKey) {
+      this._voiceKey = key;
+      this._voiceInputs = new Map();
+      const rows = assistants.map(({ id, name }) => {
+        const label = document.createElement("label");
+        label.className = "voice-option";
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.dataset.assistant = id;
+        input.addEventListener("change", () => this.setVoiceExposure(id, input.checked));
+        this._voiceInputs.set(id, input);
+        label.append(input, name);
+        return label;
+      });
+      this._voiceOptions.replaceChildren(...rows);
+    }
+    const exposure = voice?.exposure?.[this._selected] || {};
+    const pending = this._voiceOperation;
+    for (const [id, input] of this._voiceInputs || []) {
+      // Show a pending choice; afterwards (including failures) show HA's stored setting.
+      input.checked = pending?.entityId === this._selected && pending.assistant === id
+        ? pending.exposed : Boolean(exposure[id]);
+    }
+    this._voiceSection.setAttribute("aria-busy", String(Boolean(this._voiceOperation)));
+    const name = this._configured?.includes(this._selected)
+      ? this._hass?.states?.[this._selected]?.attributes?.friendly_name || "" : "";
+    this._voiceHint.textContent = name
+      ? `Lets voice assistants use this list, for example “Add milk to ${name}”.` : "";
+    this._voiceErrorElement.textContent = this._voiceError;
+    this._voiceErrorElement.hidden = !this._voiceError;
   }
 
   confirmListDeletion(target) {
@@ -901,6 +970,12 @@ class HaListsPanel extends HTMLElement {
         .list-menu .list-actions { flex-direction:column; flex-wrap:nowrap; gap:0; margin:4px 0 0; padding-top:4px; border-top:1px solid var(--divider-color); }
         .list-menu .list-actions button { display:flex; align-items:center; gap:12px; width:100%; padding:8px; text-align:start; background:transparent; border:0; border-radius:8px; cursor:pointer; }
         .list-menu .list-actions .delete-action, .list-menu .list-actions .delete-action .row-icon { color:var(--error-color); }
+        .voice-settings { margin:4px 0 0; padding-top:4px; border-top:1px solid var(--divider-color); }
+        .voice-option { display:flex; align-items:center; gap:12px; min-height:44px; padding:0 8px; border-radius:8px; cursor:pointer; }
+        .voice-option:hover { background:var(--secondary-background-color); }
+        .voice-option input { width:22px; height:22px; margin:0; flex:none; accent-color:var(--primary-color); }
+        .voice-settings .menu-hint { margin:2px 8px 6px; }
+        .voice-settings .error { margin:4px 8px; }
         .menu-heading { margin:8px 8px 4px; font-size:12px; font-weight:500; letter-spacing:.02em; color:var(--secondary-text-color); }
         .menu-hint { margin:-4px 8px 4px 42px; font-size:13px; line-height:1.4; }
         .list-menu .suggestion-history h3 { margin:0 0 4px; font-size:15px; font-weight:500; }
@@ -1370,7 +1445,21 @@ class HaListsPanel extends HTMLElement {
       this._listMenu.id = "list-menu";
       this._listMenu.className = "list-menu";
       this._listMenu.setAttribute("aria-label", "List settings");
-      this._listMenu.append(this._viewToggle, this._viewOptions, this._selectedListActions);
+      this._voiceSection = document.createElement("section");
+      this._voiceSection.className = "voice-settings";
+      this._voiceSection.setAttribute("aria-labelledby", "voice-heading");
+      const voiceHeading = document.createElement("p");
+      voiceHeading.id = "voice-heading";
+      voiceHeading.className = "menu-heading";
+      voiceHeading.textContent = "Voice assistants";
+      this._voiceOptions = document.createElement("div");
+      this._voiceHint = document.createElement("p");
+      this._voiceHint.className = "menu-hint muted";
+      this._voiceErrorElement = document.createElement("p");
+      this._voiceErrorElement.className = "error";
+      this._voiceErrorElement.setAttribute("role", "alert");
+      this._voiceSection.append(voiceHeading, this._voiceOptions, this._voiceHint, this._voiceErrorElement);
+      this._listMenu.append(this._viewToggle, this._viewOptions, this._voiceSection, this._selectedListActions);
       this._listMenuAnchor.append(this._listMenuToggle, this._listMenu);
       this._listMenu.addEventListener("keydown", (event) => {
         if (event.key === "Escape" && !event.defaultPrevented) {
@@ -1754,6 +1843,7 @@ class HaListsPanel extends HTMLElement {
     this._existingListSelect.disabled = this._refreshLists.disabled = busy;
     this._connectListSubmit.disabled = busy || !this._existingListSelect.value;
     this._selectedListActions.hidden = !management || !this._selected;
+    this.renderVoice();
     this._hideListButton.disabled = this._deleteListButton.disabled = busy;
     this._deleteListButton.hidden = !management?.deletable?.[this._selected];
     this._deleteListForm.hidden = !management || !this._deleteListTarget;

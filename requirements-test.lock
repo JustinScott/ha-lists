@@ -147,6 +147,8 @@ frozenlist==1.8.0
     # via
     #   aiohttp
     #   aiosignal
+gazetteer-matcher==1.1.0
+    # via -r requirements-test.txt
 greenlet==3.5.6
     # via sqlalchemy
 grpcio==1.85.1
@@ -159,10 +161,16 @@ habluetooth==7.1.2
     # via home-assistant-bluetooth
 hass-nabucasa==2.8.1
     # via homeassistant
+hassil==3.12.1
+    # via -r requirements-test.txt
 home-assistant-bluetooth==2.0.0
     # via homeassistant
 home-assistant-frontend==20261028.5
     # via -r requirements-test.txt
+home-assistant-intents==2026.10.27
+    # via
+    #   -r requirements-test.txt
+    #   gazetteer-matcher
 homeassistant==2026.11.1
     # via pytest-homeassistant
 httpcore==1.0.9
@@ -305,6 +313,8 @@ pytz==2026.6
 pyyaml==6.0.3
     # via
     #   annotatedyaml
+    #   gazetteer-matcher
+    #   hassil
     #   homeassistant
 regex==2026.11.9
     # via sentence-stream
@@ -368,6 +378,10 @@ uart-devices==0.1.1
     # via bluetooth-adapters
 ulid-transform==2.2.9
     # via homeassistant
+unicode-rbnf==2.5.1
+    # via
+    #   gazetteer-matcher
+    #   hassil
 urllib3==2.8.0
     # via
     #   botocore

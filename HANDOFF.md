@@ -1,5 +1,27 @@
 # HA Lists — handoff for a new local Codex session
 
+## Voice assistant access and Assist phrase matrix (2026-11-20)
+
+- List settings has a "Voice assistants" section (admins only) between View
+  options and This list. Checkboxes per assistant read/write HA's native
+  exposure via `voice.py` (`exposed_entities`: `async_get_should_expose` to read
+  without storing defaults, `async_expose_entity` to write). Assist always;
+  Alexa/Google only when HA Cloud is signed in and enabled. New admin WS command
+  `ha_lists/list/voice` (connected lists only; `assistant_unavailable` error).
+  Exposure listeners re-push `ha_lists/subscribe` state so HA-settings changes
+  appear live. `management.voice` is null when exposure support is absent.
+- `tests_ha/test_assist_phrases.py`: 25 supported phrases pass, 12 strict xfail
+  gaps (see README "Voice assistants"). Aliases and "Grocery List" naming work.
+  Requirements: hassil, home-assistant-intents, gazetteer-matcher (pinned to HA
+  2026.11.1) added to requirements-test.txt/lock. Browser config now loads
+  `conversation:`; new voice-checks.mjs toggles Assist in the panel and verifies
+  `/api/conversation/process` end to end plus live sync from HA's expose API.
+- Local: lint/format/syntax, 90 Python tests + 12 xfail (97.48%), 76 panel tests,
+  full installed-HA browser workflow (native-process mode) passed. A clean venv
+  from the lockfile also passed. Real satellite/speech-to-text not verified.
+- Production: the user's two lists are stored as not exposed to any assistant;
+  their "Voice Assistant" satellite was unavailable on 2026-11-20.
+
 ## List settings menu and right-side drawer (2026-11-20)
 
 - The mobile **My lists** drawer now slides in from the right, next to its header
