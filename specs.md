@@ -25,7 +25,16 @@ Build a free, local-first, application-style list manager integrated into Home A
 - Beacon-inspired clean task list, but **show full list names**, not icon-only list navigation.
 - Desktop: persistent named-list sidebar, item counts, search, main list pane; optionally resizable split layout.
 - Android/narrow layout: a labelled “My lists” control at the header's
-  top-right opens a modal drawer that slides in from the right (2026-11-20), showing full list names and New/Connect controls. Keep
+  top-right opens a modal drawer that slides in from the right (2026-11-20), showing full list names and New/Connect controls. New
+  list and Connect existing list are compact labelled icon buttons (aria-label
+  and tooltip) in the drawer heading beside Close, and atop the desktop list
+  pane (owner request 2026-11-21: large text buttons were tapped by accident).
+  On narrow screens a clearly sideways leftward drag on the task page pulls the
+  drawer out under the finger, and a rightward drag on the open drawer puts it
+  away; release past a third of its width or a quick flick commits, otherwise
+  it snaps back. Drags starting in text fields, suggestions, the task editor or
+  the settings menu, and mostly vertical drags, are ignored. The gesture
+  supplements the labelled button and never replaces it. Keep
   the selector out of normal page flow so the task pane occupies the screen.
   Selecting any list closes the drawer and restores focus to its opener. Provide
   Close, Escape and backdrop dismissal, contained keyboard focus, reduced-motion
@@ -112,9 +121,12 @@ Build a free, local-first, application-style list manager integrated into Home A
   IME composition also refreshes nonempty drafts and invalidates older replies;
   retain the popup through a temporary empty composing replacement. Track the
   composition session for suggestion continuity; use the native key event's
-  `isComposing` and IME process-key code 229 to guard candidate-confirmation
-  Enter. An explicit non-composing Enter or native form submission must work
-  while a dictation session remains open. Do not use the session flag alone to
+  IME process-key code 229 to guard candidate-confirmation Enter; a key event
+  that is composing without being a real Enter (keyCode 13) is also ignored.
+  Chrome on Android sends the keyboard's Enter/Done action as Enter keyCode 13
+  with `isComposing` true while dictated text is still composing (2026-11-21),
+  so a real Enter must submit even when `isComposing` is true. Native form
+  submission must also work while a dictation session remains open. Do not use the session flag alone to
   block submission; native browsers suppress implicit IME-confirmation submit.
   A real no-match result, non-composing blank entry, blur, Escape or selection/list change can dismiss
   it. Nothing is initially highlighted; changing the query resets selection. Arrow

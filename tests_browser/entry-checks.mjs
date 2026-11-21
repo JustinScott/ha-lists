@@ -44,7 +44,9 @@ export async function verifySteadyEntry(page) {
         // session is open; this does not operate a real microphone/keyboard.
         await input.dispatchEvent("keydown", { key: "Enter", keyCode: 229, isComposing: true, bubbles: true, composed: true, cancelable: true });
         assert.equal(await page.getByRole("button", { name: `Rename ${title}`, exact: true }).count(), 0);
-        await input.dispatchEvent("keydown", { key: "Enter", keyCode: 13, isComposing: false, bubbles: true, composed: true, cancelable: true });
+        // Chrome on Android synthesizes the Enter/Done editor action as keyCode 13
+        // while the dictated text is still composing.
+        await input.dispatchEvent("keydown", { key: "Enter", keyCode: 13, isComposing: true, bubbles: true, composed: true, cancelable: true });
       }
       await page.getByRole("button", { name: `Rename ${title}`, exact: true }).waitFor();
       await page.waitForFunction((node) => node.getAttribute("aria-busy") === "false", await panel.evaluateHandle((node) => node._form));

@@ -185,14 +185,84 @@ class HaListsPanel extends HTMLElement {
     if (restoreFocus && this.isConnected && this._narrow) this._listDrawerToggle.focus({ preventScroll: true });
   }
 
+  // Narrow screens: drag left across the task page to pull My lists out, or drag
+  // the open drawer right to put it away. A supplement to the labelled button,
+  // never a replacement. Touch events keep firing during a sideways drag where
+  // pointer events would be cancelled by the browser's pan handling.
+  bindDrawerSwipe() {
+    const skip = "input,textarea,select,ha-input,[contenteditable=true],.suggestions,.edit-form,.list-menu";
+    let drag = null;
+    const begin = (event, opening) => {
+      drag = null;
+      if (!this._narrow || event.touches?.length !== 1 || this._listDrawer.open !== !opening) return;
+      if (this._listDrawer.classList.contains("settling")) return;
+      if (event.composedPath().some((node) => node instanceof Element && node.matches(skip))) return;
+      const { clientX, clientY } = event.touches[0];
+      drag = { opening, x: clientX, y: clientY, active: false, shown: 0, width: 0, speed: 0, at: event.timeStamp };
+    };
+    const move = (event) => {
+      if (!drag || event.touches?.length !== 1) return;
+      const { clientX, clientY } = event.touches[0];
+      const pull = drag.opening ? drag.x - clientX : clientX - drag.x;
+      if (!drag.active) {
+        const vertical = Math.abs(clientY - drag.y);
+        if (Math.max(Math.abs(pull), vertical) < 12) return;
+        // Only a clearly sideways drag in the right direction; anything else scrolls.
+        if (pull < 12 || pull < vertical * 1.5) { drag = null; return; }
+        drag.active = true;
+        // "swiped" keeps the slide-in animation from replaying until the drawer closes.
+        this._listDrawer.classList.add("dragging", "swiped");
+        this._listDrawer.style.transform = "";
+        if (drag.opening) this.openListDrawer();
+        drag.width = this._listDrawer.getBoundingClientRect().width || 1;
+        drag.start = pull;
+      }
+      const shown = Math.min(Math.max(pull - drag.start, 0), drag.width);
+      const elapsed = Math.max(event.timeStamp - drag.at, 1);
+      drag.speed = (shown - drag.shown) / elapsed;
+      drag.shown = shown;
+      drag.at = event.timeStamp;
+      this._listDrawer.style.transform = `translateX(${drag.opening ? drag.width - shown : shown}px)`;
+    };
+    const end = () => {
+      const done = drag;
+      drag = null;
+      if (!done?.active) return;
+      // Commit past a third of the drawer, or on a quick flick in the drag direction.
+      const commit = done.shown > done.width / 3 || done.speed > 0.4;
+      const open = done.opening === commit;
+      const drawer = this._listDrawer;
+      drawer.classList.remove("dragging");
+      drawer.classList.add("settling");
+      drawer.style.transform = `translateX(${open ? 0 : done.width}px)`;
+      setTimeout(() => {
+        drawer.classList.remove("settling");
+        drawer.style.transform = "";
+        if (!open) this.closeListDrawer();
+      }, 170);
+    };
+    for (const [target, opening] of [[this._main, true], [this._listDrawer, false]]) {
+      target.addEventListener("touchstart", (event) => begin(event, opening), { passive: true });
+      target.addEventListener("touchmove", move, { passive: true });
+      target.addEventListener("touchend", end);
+      target.addEventListener("touchcancel", end);
+    }
+  }
+
   updateListLayout() {
     this._listDrawerToggle.hidden = !this._narrow;
     const parent = this._narrow ? this._listDrawer : this._layout;
     if (this._listPane.parentElement === parent) return;
     const wasOpen = this._listDrawer.open;
     this.closeListDrawer(false);
-    if (this._narrow) parent.append(this._listPane);
-    else parent.prepend(this._listPane);
+    if (this._narrow) {
+      parent.append(this._listPane);
+      // The drawer's own heading carries the list tools, beside Close.
+      this._drawerHeading.insertBefore(this._listActions, this._drawerClose);
+    } else {
+      parent.prepend(this._listPane);
+      this._listPane.prepend(this._listActions);
+    }
     if (wasOpen && !this._narrow) this._nav.querySelector('[aria-current="true"]')?.focus({ preventScroll: true });
   }
 
@@ -939,7 +1009,18 @@ class HaListsPanel extends HTMLElement {
         .list-drawer::backdrop { background:rgba(0,0,0,.45); }
         .list-drawer[open] { animation:list-drawer-in 160ms ease-out; }
         .drawer-heading { display:flex; align-items:center; justify-content:space-between; padding:8px 18px; border-bottom:1px solid var(--divider-color); }
-        .drawer-heading h2 { font-size:20px; margin:0; }
+        .drawer-heading h2 { font-size:20px; margin:0; margin-inline-end:auto; }
+        .drawer-heading { gap:4px; }
+        .list-tools { display:flex; justify-content:flex-end; gap:4px; }
+        .list-pane > .list-tools { margin:-8px -8px 4px; }
+        .list-pane .list-tools button, .drawer-heading .list-tools button { min-width:0; min-height:0; display:grid; place-items:center; width:40px; height:40px; padding:8px; color:inherit; background:transparent; border:0; border-radius:50%; cursor:pointer; }
+        .list-tools button[aria-expanded=true] { background:var(--secondary-background-color); color:var(--primary-color); }
+        .list-tools button:disabled { opacity:.5; cursor:default; }
+        .list-tools .tool-icon { display:block; width:24px; height:24px; fill:currentColor; }
+        .list-drawer.swiped[open] { animation:none; }
+        .list-drawer.dragging { transition:none; }
+        .list-drawer.settling { transition:transform 160ms ease-out; }
+        @media(prefers-reduced-motion:reduce) { .list-drawer.settling { transition:none; } }
         .drawer-heading button { min-width:44px; min-height:44px; font:inherit; color:inherit; background:transparent; border:0; cursor:pointer; }
         .list-drawer .list-pane { border:0; border-radius:0; }
         @keyframes list-drawer-in { from { transform:translateX(100%); } to { transform:translateX(0); } }
@@ -1087,6 +1168,7 @@ class HaListsPanel extends HTMLElement {
       this._listDrawer.setAttribute("aria-labelledby", "list-selector-title");
       const drawerHeading = document.createElement("div");
       drawerHeading.className = "drawer-heading";
+      this._drawerHeading = drawerHeading;
       const drawerTitle = document.createElement("h2");
       drawerTitle.id = "list-selector-title";
       drawerTitle.textContent = "My lists";
@@ -1106,6 +1188,7 @@ class HaListsPanel extends HTMLElement {
           (event.shiftKey ? last : first)?.focus();
         }
       });
+      this._listDrawer.addEventListener("close", () => this._listDrawer.classList.remove("swiped"));
       this._listDrawer.addEventListener("close", () => this._listDrawerToggle.setAttribute("aria-expanded", String(this._listDrawer.open)));
       this._listDrawer.addEventListener("click", (event) => {
         const rect = this._listDrawer.getBoundingClientRect();
@@ -1126,14 +1209,22 @@ class HaListsPanel extends HTMLElement {
       this._listDrawerToggle.append(drawerIcon, document.createTextNode("My lists"));
       header.append(this._listDrawerToggle);
       this._listActions = document.createElement("div");
-      this._listActions.className = "list-actions";
-      this._newListButton = actionButton("New list", () => {
+      this._listActions.className = "list-tools";
+      // Compact icon buttons (2026-11-21): large text buttons were too easy to hit
+      // by accident. aria-label keeps the accessible name; title gives a tooltip.
+      const iconButton = (label, path, handler) => {
+        const button = withIcon(actionButton("", handler), path, "tool-icon");
+        button.setAttribute("aria-label", label);
+        button.title = label;
+        return button;
+      };
+      this._newListButton = iconButton("New list", "M3 16h7v-2H3zm15-2v-4h-2v4h-4v2h4v4h2v-4h4v-2zM14 6H3v2h11zm0 4H3v2h11z", () => {
         this._newListOpen = !this._newListOpen;
         this._listError = "";
         this.render();
         if (this._newListOpen) this._newListName.focus();
       });
-      this._connectListButton = actionButton("Connect existing list", () => {
+      this._connectListButton = iconButton("Connect existing list", "M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7a5 5 0 0 0 0 10h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1M8 13h8v-2H8zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4a5 5 0 0 0 0-10", () => {
         this._connectListOpen = !this._connectListOpen;
         this._listError = "";
         this.render();
@@ -1233,7 +1324,7 @@ class HaListsPanel extends HTMLElement {
       this._listNoticeElement = document.createElement("p");
       this._listNoticeElement.className = "muted";
       this._listNoticeElement.setAttribute("aria-live", "polite");
-      listPane.append(this._nav, this._listActions, this._newListForm, this._connectListForm,
+      listPane.append(this._listActions, this._nav, this._newListForm, this._connectListForm,
         this._deleteListForm, this._pendingLists, this._listErrorElement, this._listNoticeElement);
       const article = document.createElement("article");
       this._heading = document.createElement("h2");
@@ -1486,7 +1577,12 @@ class HaListsPanel extends HTMLElement {
       // Handle Enter explicitly: ha-input's native field lives in its own shadow DOM,
       // so relying on the surrounding form's implicit submit is unreliable on Android.
       const submitOnEnter = (event) => {
-        if (event.isComposing || event.keyCode === 229 || event.defaultPrevented) return;
+        // Android keyboards send their Enter/Done action as a real Enter (keyCode 13)
+        // while dictation or word composition is still open, so isComposing is true.
+        // Desktop IME candidate confirmation reports process-key 229 instead, so that
+        // code (not isComposing) is what must keep Enter from submitting.
+        const explicitEnter = event.key === "Enter" && event.keyCode === 13;
+        if (event.keyCode === 229 || (event.isComposing && !explicitEnter) || event.defaultPrevented) return;
         if (["ArrowDown", "ArrowUp"].includes(event.key) && this._suggestions.length) {
           event.preventDefault();
           event.stopPropagation();
@@ -1501,7 +1597,8 @@ class HaListsPanel extends HTMLElement {
           this.dismissSuggestions();
           return;
         }
-        if (event.key !== "Enter" || event.isComposing || event.repeat || event.defaultPrevented) return;
+        if (!explicitEnter && (event.key !== "Enter" || event.isComposing)) return;
+        if (event.repeat) return;
         event.preventDefault();
         event.stopPropagation();
         this._entryComposing = false;
@@ -1647,6 +1744,7 @@ class HaListsPanel extends HTMLElement {
       layout.append(listPane, article);
       this._main.append(layout);
       this.shadowRoot.replaceChildren(style, header, this._main, this._listDrawer);
+      this.bindDrawerSwipe();
     }
     const entities = this.availableLists;
     const selected = entities.find((entity) => entity.entity_id === this._selected);
@@ -1818,6 +1916,8 @@ class HaListsPanel extends HTMLElement {
     const busy = Boolean(this._listOperation);
     this._listActions.hidden = !management;
     this._newListButton.disabled = this._connectListButton.disabled = busy;
+    this._newListButton.setAttribute("aria-expanded", String(Boolean(this._newListOpen)));
+    this._connectListButton.setAttribute("aria-expanded", String(Boolean(this._connectListOpen)));
     this._newListForm.hidden = !management || !this._newListOpen;
     this._newListName.readOnly = busy;
     this._createListSubmit.disabled = this._cancelNewList.disabled = busy;

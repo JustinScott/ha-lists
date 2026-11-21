@@ -987,12 +987,19 @@ test("same-list refresh failure retains tasks but list switching never shows the
 });
 
 test("explicit Enter and native submit work while the dictation session remains open", async () => {
-  for (const method of ["Enter", "submit"]) {
+  // Chrome on Android synthesizes the keyboard's Enter/Done action as a real Enter
+  // (keyCode 13) while the dictated text is still composing, so isComposing is true.
+  // The 2026-11-15 version of this test sent isComposing:false and missed that.
+  for (const method of ["Enter", "Enter (not composing)", "submit"]) {
     const { panel, window, calls } = await setup();
     draft(window, panel, "Dictated task");
     panel._input.dispatchEvent(new window.CompositionEvent("compositionstart", { bubbles: true }));
-    if (method === "Enter") entryKey(window, panel, "Enter", { keyCode: 13, isComposing: false });
-    else panel._form.dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
+    if (method === "Enter") {
+      entryKey(window, panel, "Enter", { keyCode: 229, isComposing: true });
+      assert.equal(calls.length, 0, "IME candidate confirmation (229) must not add");
+      entryKey(window, panel, "Enter", { keyCode: 13, isComposing: true });
+    } else if (method === "submit") panel._form.dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
+    else entryKey(window, panel, "Enter", { keyCode: 13, isComposing: false });
     await tick(); await tick();
     assert.equal(calls.length, 1, `${method} must not be blocked by the session flag`);
     assert.equal(calls[0].data.item, "Dictated task");
@@ -1642,4 +1649,84 @@ test("date-only deadlines stay due through the final local millisecond", async (
     if (originalTZ === undefined) delete process.env.TZ;
     else process.env.TZ = originalTZ;
   }
+});
+
+function touch(window, target, type, x, y, timeStamp) {
+  const event = new window.Event(type, { bubbles: true, composed: true });
+  Object.defineProperty(event, "touches", { value: type === "touchend" ? [] : [{ clientX: x, clientY: y }] });
+  Object.defineProperty(event, "timeStamp", { value: timeStamp });
+  target.dispatchEvent(event);
+}
+
+function swipe(window, target, points, step = 40) {
+  const [first, ...rest] = points;
+  let time = 0;
+  touch(window, target, "touchstart", first[0], first[1], time);
+  for (const [x, y] of rest) touch(window, target, "touchmove", x, y, time += step);
+  touch(window, target, "touchend", 0, 0, time += step);
+}
+
+const settle = () => new Promise((resolve) => setTimeout(resolve, 220));
+
+test("narrow list drawer can be dragged out from the right and dragged back closed", async () => {
+  const { panel, window } = await setup({ lists: ["todo.groceries", "todo.other"] });
+  panel.narrow = true;
+  window.HTMLDialogElement.prototype.close = function () { this.open = false; this.dispatchEvent(new window.Event("close")); };
+  panel._listDrawer.getBoundingClientRect = () => ({ width: 300, left: 90, right: 390, top: 0, bottom: 800 });
+  const page = panel._results;
+  // Mostly vertical movement scrolls the page and never opens the drawer.
+  swipe(window, page, [[300, 200], [290, 260], [280, 330]]);
+  assert.equal(panel._listDrawer.open, false);
+  // A slow, short pull snaps back closed.
+  swipe(window, page, [[300, 200], [285, 201], [260, 202]], 400);
+  await settle();
+  assert.equal(panel._listDrawer.open, false);
+  assert.equal(panel._listDrawer.style.transform, "");
+  // Starting on the task input is left to text selection.
+  swipe(window, panel._input, [[300, 200], [200, 200], [80, 200]]);
+  assert.equal(panel._listDrawer.open, false);
+  // A long leftward drag follows the finger, then opens fully.
+  touch(window, page, "touchstart", 350, 200, 0);
+  touch(window, page, "touchmove", 330, 200, 40);
+  touch(window, page, "touchmove", 230, 202, 400);
+  assert.equal(panel._listDrawer.open, true);
+  assert.match(panel._listDrawer.style.transform, /translateX\((?!0px)/, "drawer tracks the finger mid-drag");
+  touch(window, page, "touchmove", 150, 204, 800);
+  touch(window, page, "touchend", 0, 0, 1200);
+  await settle();
+  assert.equal(panel._listDrawer.open, true);
+  assert.equal(panel._listDrawer.style.transform, "");
+  assert.equal(panel._listDrawer.classList.contains("swiped"), true, "slide-in animation must not replay");
+  // Dragging the open drawer to the right puts it away.
+  swipe(window, panel._nav, [[150, 200], [170, 200], [300, 202]]);
+  await settle();
+  assert.equal(panel._listDrawer.open, false);
+  assert.equal(panel._listDrawer.classList.contains("swiped"), false);
+  assert.equal(panel.shadowRoot.activeElement, panel._listDrawerToggle);
+  // Desktop has no drawer gesture.
+  panel.narrow = false;
+  swipe(window, page, [[300, 200], [200, 200], [80, 200]]);
+  assert.equal(panel._listDrawer.open, false);
+  window.close();
+});
+
+test("list tools are compact labelled icons in the drawer heading and atop the desktop pane", async () => {
+  const { panel, window } = await setup({ lists: ["todo.groceries", "todo.other"], management: { available: [], deletable: {}, pending: [] } });
+  for (const [button, label] of [[panel._newListButton, "New list"], [panel._connectListButton, "Connect existing list"]]) {
+    assert.equal(button.getAttribute("aria-label"), label);
+    assert.equal(button.title, label);
+    assert.equal(button.textContent.trim(), "", "no visible text label");
+    assert.ok(button.querySelector("svg[aria-hidden=true]"));
+    assert.equal(button.getAttribute("aria-expanded"), "false");
+  }
+  assert.equal(panel._listPane.firstElementChild, panel._listActions, "desktop tools sit at the top of the list pane");
+  panel.narrow = true;
+  assert.equal(panel._listActions.parentElement, panel._drawerHeading);
+  assert.equal(panel._listActions.nextElementSibling, panel._drawerClose);
+  panel._newListButton.click();
+  assert.equal(panel._newListButton.getAttribute("aria-expanded"), "true");
+  assert.equal(panel._newListForm.hidden, false);
+  panel.narrow = false;
+  assert.equal(panel._listPane.firstElementChild, panel._listActions);
+  window.close();
 });

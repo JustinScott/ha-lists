@@ -62,7 +62,7 @@ addresses, or real Home Assistant configuration.
 ## Configuration and everyday use (development preview)
 
 1. Install this integration on a **development** Home Assistant instance, restart it, and add **HA Lists** under Settings → Devices & services.
-2. Open **Lists**. Administrators can use **New list** to create native Local To-do lists, or **Connect existing list** to show existing Local To-do entities. The integration's **Configure** options also retain the existing native entity selection workflow.
+2. Open **Lists**. Administrators can use the **New list** icon to create native Local To-do lists, or the **Connect existing list** (link) icon to show existing Local To-do entities. On a phone, both sit at the top of the **My lists** drawer, which you can also pull out by dragging left across the task page. The integration's **Configure** options also retain the existing native entity selection workflow.
 3. Open the **Lists** sidebar entry. On mobile, use **My lists** at the top right of the header to open the drawer, which slides in from the right; selecting a list closes it. On desktop, select a list in the persistent left pane. Select a task title to edit or delete it. The editor offers descriptions, due dates, and due times where the provider supports them. Due times use the browser time zone shown in the editor. Clear deadline removes both date and time. Delete asks you to confirm the task first.
 
 The integration requires Home Assistant's frontend, HTTP, panel, and to-do components. It uses Home Assistant's authenticated frontend connection; there is no separate HA Lists account or public server. The initial configuration does not require a cloud provider.

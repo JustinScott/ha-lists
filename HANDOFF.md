@@ -1,5 +1,32 @@
 # HA Lists — handoff for a new local Codex session
 
+## Dictation Enter, compact list tools and drawer swipe (2026-11-21)
+
+- Bug: with Android speech-to-text, Enter/Done still did not add. Chrome on
+  Android sends that editor action as Enter keyCode 13 while dictated text is
+  still composing, so `isComposing` is true. The 2026-11-15 guard returned on any
+  `isComposing`, and its panel and browser regressions emulated keyCode 13 with
+  `isComposing:false` — a signal the device does not send — so both passed while
+  the bug remained. Now a real Enter (key Enter, keyCode 13) submits even when
+  composing; process-key 229 and composing non-Enter events stay blocked. Panel
+  and browser regressions now send keyCode 13 with `isComposing:true`; the panel
+  regression was confirmed failing against the old guard.
+- New list / Connect existing list are icon buttons (playlist-plus, link) with
+  aria-label, tooltip and aria-expanded, in the drawer heading beside Close on
+  narrow screens and atop the list pane on desktop. Button accessible names are
+  unchanged, so existing role-based browser checks still find them.
+- Narrow drawer gesture: passive touch listeners on main (leftward drag opens)
+  and on the drawer (rightward drag closes). The drawer follows the finger;
+  release past 1/3 width or a flick > 0.4 px/ms commits. A `swiped` class stops
+  the slide-in animation replaying after a drag. Reduced motion removes the
+  settle transition.
+- Verified here: `node --check`; panel tests 78/78 including new drag, tools and
+  dictation-Enter regressions. NOT run here (no Docker/Chromium in this
+  environment): installed-HA browser suite, which now includes CDP touch drags
+  and the corrected dictation signal; Python tests (no Python changes). A real
+  Android microphone session remains unverified by automation.
+
+
 ## Voice assistant access and Assist phrase matrix (2026-11-20)
 
 - List settings has a "Voice assistants" section (admins only) between View
