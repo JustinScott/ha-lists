@@ -14,6 +14,7 @@ export async function startNative(python, components, configuration, onboarding)
     await mkdir(join(directory, ".storage"));
     await writeFile(join(directory, "configuration.yaml"), configuration);
     await writeFile(join(directory, ".storage/onboarding"), onboarding);
+    await writeFile(join(directory, "automations.yaml"), "[]");
     await cp(components, join(directory, "custom_components"), { recursive: true });
     const socket = createServer();
     socket.listen(0, "127.0.0.1");

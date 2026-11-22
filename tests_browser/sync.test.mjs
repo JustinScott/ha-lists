@@ -170,15 +170,17 @@ test("native To-do and HA Lists share task changes across browser sessions", { t
     let base;
     if (process.env.HA_TEST_PYTHON) {
       nativeRuntime = await startNative(process.env.HA_TEST_PYTHON, components,
-        "frontend:\nconfig:\ntodo:\nconversation:\n", onboarding);
+        "frontend:\nconfig:\ntodo:\nconversation:\nautomation: !include automations.yaml\n", onboarding);
       base = nativeRuntime.base;
     } else {
       await docker("docker", [
         "create", "--name", name, "--publish", "127.0.0.1::8123",
         "--entrypoint", "/bin/sh", image, "-c",
         'mkdir -p /config/.storage && printf "%s" "$1" > /config/configuration.yaml && ' +
+        // Like a default install, so automations created in the UI load.
+        'printf "[]" > /config/automations.yaml && ' +
         'printf "%s" "$2" > /config/.storage/onboarding && exec /init',
-        "ha-lists", "frontend:\nconfig:\ntodo:\nconversation:\n", onboarding,
+        "ha-lists", "frontend:\nconfig:\ntodo:\nconversation:\nautomation: !include automations.yaml\n", onboarding,
       ], { timeout: 480_000 });
       created = true;
       await docker("docker", ["cp", components, `${name}:/config/`], { timeout: 30_000 });
