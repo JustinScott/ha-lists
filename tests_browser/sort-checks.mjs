@@ -38,14 +38,16 @@ export async function verifyTaskSorting({ page, base, token, post, entityId, lis
     await expectTitles(["Sort newer", "Sort older", ...completed]);
     await page.getByRole("button", { name: "Rename Sort older", exact: true }).click();
     const title = page.getByRole("textbox", { name: "Task title", exact: true });
-    await title.fill("Unsent sorted editor");
+    await title.fill("Sorted editor title");
     await selectTaskView(page, "Sort active tasks", "oldest");
-    await expectTitles(["Sort older", "Sort newer", ...completed]);
-    assert.equal(await title.inputValue(), "Unsent sorted editor");
+    // Autosave stores the edit once focus leaves the title; the open editor,
+    // the quick-add draft and the task's position all survive re-sorting.
+    await expectTitles(["Sorted editor title", "Sort newer", ...completed]);
+    assert.equal(await title.inputValue(), "Sorted editor title");
     assert.equal(await quickAdd.inputValue(), "Unsent sorting draft");
-    // Autosave: restore the original title, then close (saves nothing new).
     await title.fill("Sort older");
     await page.getByRole("button", { name: "Close task editor", exact: true }).click();
+    await expectTitles(["Sort older", "Sort newer", ...completed]);
     await selectTaskView(page, "Show tasks", "completed");
     await expectTitles(completed);
     await selectTaskView(page, "Sort active tasks", "newest");
