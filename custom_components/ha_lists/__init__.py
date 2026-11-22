@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import voluptuous as vol
@@ -31,6 +32,14 @@ PANEL_PATH = "ha-lists"
 ASSET_URL = "/ha_lists_static"
 ASSETS_REGISTERED = f"{DOMAIN}_assets_registered"
 PANEL_ELEMENT = "ha-lists-panel"
+PANEL_FILE = Path(__file__).parent / "frontend" / "panel.js"
+
+
+def panel_version() -> str:
+    """Fingerprint of panel.js, so browsers fetch a new panel after updates."""
+    return hashlib.sha256(PANEL_FILE.read_bytes()).hexdigest()[:12]
+
+
 GET_DUE_TASKS_SCHEMA = vol.Schema(
     {
         vol.Optional("include_overdue", default=False): cv.boolean,
@@ -69,7 +78,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
             [
                 StaticPathConfig(
                     f"{ASSET_URL}/panel.js",
-                    str(Path(__file__).parent / "frontend" / "panel.js"),
+                    str(PANEL_FILE),
                     cache_headers=False,
                 )
             ]
@@ -87,6 +96,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
         )
         # HTTP routes and WebSocket commands live for the entire HA process.
         hass.data[ASSETS_REGISTERED] = True
+    # The address changes with the file's contents, so browsers and the
+    # companion app cannot keep running a cached panel from an older version.
+    version = await hass.async_add_executor_job(panel_version)
     catalog = SuggestionCatalog(hass, entry)
     await catalog.async_load()
     reminders = ReminderManager(hass, entry)
@@ -97,7 +109,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
         webcomponent_name=PANEL_ELEMENT,
         sidebar_title="Lists",
         sidebar_icon="mdi:format-list-checks",
-        module_url=f"{ASSET_URL}/panel.js",
+        module_url=f"{ASSET_URL}/panel.js?v={version}",
         require_admin=False,
     )
     hass.data[DOMAIN] = True
