@@ -11,9 +11,9 @@ const deferred = () => {
   return { promise, resolve, reject };
 };
 
-async function setup({ lists = ["todo.groceries"], items = [], service, readItems, subscribeItems, subscribeConfiguration, management = null, manageLists, suggestions, manageSuggestions, supportedFeatures = 6, clock } = {}) {
+async function setup({ lists = ["todo.groceries"], items = [], service, readItems, subscribeItems, subscribeConfiguration, management = null, manageLists, suggestions, manageSuggestions, supportedFeatures = 6, clock, messages, user = { is_admin: true }, callApi } = {}) {
   const dom = new JSDOM("<!doctype html><html><body></body></html>", {
-    runScripts: "outside-only", pretendToBeVisual: true,
+    runScripts: "outside-only", pretendToBeVisual: true, url: "http://homeassistant.local:8123/ha-lists",
   });
   const { window } = dom;
   if (clock) {
@@ -35,8 +35,14 @@ async function setup({ lists = ["todo.groceries"], items = [], service, readItem
   const states = Object.fromEntries(lists.map((id) => [id, {
     entity_id: id, state: "0", attributes: { friendly_name: id, supported_features: supportedFeatures },
   }]));
+  const apiCalls = [];
   const hass = {
     states,
+    user,
+    async callApi(method, path, body) {
+      apiCalls.push({ method, path, body });
+      return callApi ? callApi(method, path, body) : { result: "ok" };
+    },
     connection: {
       async subscribeMessage(callback, request) {
         if (request.type === "ha_lists/subscribe") return subscribeConfiguration ? subscribeConfiguration(callback) : () => {};
@@ -44,6 +50,7 @@ async function setup({ lists = ["todo.groceries"], items = [], service, readItem
       },
       async sendMessagePromise(request) {
         requests.push(request);
+        if (messages && request.type in messages) return messages[request.type](request);
         if (request.type === "ha_lists/suggestions") return suggestions ? suggestions(request) : { suggestions: [], learning: true, exclude_active: true, count: 0 };
         if (request.type === "ha_lists/suggestions/manage") return manageSuggestions?.(request) || {};
         if (request.type === "ha_lists/state") return { lists: [...lists], management };
@@ -76,7 +83,7 @@ async function setup({ lists = ["todo.groceries"], items = [], service, readItem
   window.document.body.append(panel);
   panel.hass = hass;
   await tick(); await tick();
-  return { window, panel, calls, requests, items, hass };
+  return { window, panel, calls, requests, items, hass, apiCalls };
 }
 
 function rows(panel) { return [...panel.shadowRoot.querySelectorAll("li")]; }
@@ -715,7 +722,9 @@ test("sort composes with search/filters and keeps drafts and selection across sn
   assert.equal(panel._searchInput.value, "Apple");
   assert.equal(panel._input.value, "Unsent task");
   assert.deepEqual(visibleTitles(panel), ["Apple old", "Apple new"]);
-  assert.equal(calls.length, 0);
+  // Autosave (2026-11-21): leaving the list stores the open editor's change.
+  assert.deepEqual(calls.map(({ action, data }) => [action, data.entity_id, data.item, data.rename]),
+    [["update_item", "todo.groceries", "a", "Unsaved editor"]]);
   panel.remove(); window.close();
 });
 
@@ -1218,22 +1227,78 @@ test("rename uses the stable ID even when two tasks have the same title", async 
   assert.equal(input.form.hidden, true);
 });
 
-test("cancel and unsupported items never submit a rename", async () => {
-  const { panel, calls } = await setup({ items: [
+test("closing saves the edit, undo restores it, and unsupported items cannot be renamed", async () => {
+  const { panel, window, calls } = await setup({ items: [
     { uid: "first", summary: "Apples", status: "needs_action" },
     { summary: "No ID", status: "needs_action" },
   ] });
   const input = openRename(panel, "Apples");
-  input.value = "Discard me";
-  deleteButton(panel, "Cancel").click();
-  assert.equal(input.form.hidden, true);
-  assert.equal(panel.shadowRoot.activeElement.textContent, "Apples");
+  assert.equal(deleteButton(panel, "Undo").disabled, true, "nothing to undo yet");
+  input.value = "Typed then undone";
+  input.dispatchEvent(new window.Event("input", { bubbles: true }));
+  assert.equal(deleteButton(panel, "Undo").disabled, false);
+  deleteButton(panel, "Undo").click();
+  await tick();
+  assert.equal(input.value, "Apples", "undo first discards unsaved typing");
   assert.equal(calls.length, 0);
+  input.value = "Saved on close";
+  deleteButton(panel, "Close task editor").click();
+  await tick(); await tick();
+  assert.equal(input.form.hidden, true);
+  assert.equal(panel.shadowRoot.activeElement.textContent, "Saved on close");
+  assert.deepEqual(JSON.parse(JSON.stringify(calls.map((call) => call.data))), [
+    { entity_id: "todo.groceries", item: "first", rename: "Saved on close" },
+  ]);
+  const reopened = openRename(panel, "Saved on close");
+  reopened.value = "Second name";
+  reopened.dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(); await tick();
+  assert.equal(calls.at(-1).data.rename, "Second name");
+  assert.equal(panel._saveStatus.textContent, "Saved");
+  deleteButton(panel, "Undo").click();
+  await tick(); await tick();
+  assert.equal(reopened.value, "Saved on close");
+  assert.equal(calls.at(-1).data.rename, "Saved on close", "undo writes the previous value");
+  assert.equal(deleteButton(panel, "Undo").disabled, true, "only changes since opening are undoable");
   assert.equal(panel.shadowRoot.querySelector('[aria-label="Rename No ID"]'), null);
   const readOnly = await setup({
     supportedFeatures: 0, items: [{ uid: "first", summary: "Apples" }],
   });
   assert.equal(readOnly.panel.shadowRoot.querySelector('[aria-label="Rename Apples"]'), null);
+});
+
+test("typing saves after a pause, an emptied title is never sent, and a failed close can be discarded", async () => {
+  let fail = false;
+  const { panel, window, calls } = await setup({
+    supportedFeatures: 2 | 4 | 64,
+    items: [{ uid: "first", summary: "Apples", status: "needs_action", description: "" }],
+    service: async () => { if (fail) throw Error("provider offline"); },
+  });
+  const input = openRename(panel, "Apples");
+  const description = input.form.querySelector("textarea");
+  description.value = "Green ones";
+  description.dispatchEvent(new window.Event("input", { bubbles: true }));
+  await tick();
+  assert.equal(calls.length, 0, "no write on every keystroke");
+  await new Promise((resolve) => setTimeout(resolve, 1600));
+  await tick(); await tick();
+  assert.deepEqual(JSON.parse(JSON.stringify(calls.map((call) => call.data))), [
+    { entity_id: "todo.groceries", item: "first", description: "Green ones" },
+  ]);
+  input.value = "   ";
+  input.dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick();
+  assert.equal(calls.length, 1, "an empty title is not a rename");
+  fail = true;
+  input.value = "Will fail";
+  deleteButton(panel, "Close task editor").click();
+  await tick(); await tick();
+  assert.equal(input.form.hidden, false, "a failed save keeps the editor open");
+  assert.match(panel._editError.textContent, /provider offline.*Close again to discard/);
+  deleteButton(panel, "Close task editor").click();
+  await tick();
+  assert.equal(input.form.hidden, true);
+  assert.equal(rows(panel)[0].textContent, "Apples");
 });
 
 test("a rejected rename preserves the draft and shows the original task title", async () => {
@@ -1265,7 +1330,8 @@ test("an external rename detected on save preserves the newer title", async () =
 
 function deleteButton(panel, text) {
   return [...panel.shadowRoot.querySelectorAll(".edit-form button")].find(
-    (button) => button.textContent === text && !button.hidden
+    (button) => (button.getAttribute("aria-label") || button.textContent) === text
+      && !button.hidden && !button.closest("[hidden]")
   );
 }
 
@@ -1729,4 +1795,111 @@ test("list tools are compact labelled icons in the drawer heading and atop the d
   panel.narrow = false;
   assert.equal(panel._listPane.firstElementChild, panel._listActions);
   window.close();
+});
+
+function reminderBackend({ uids = [], automations = 0, failSave = false } = {}) {
+  const state = { uids: new Set(uids), automations };
+  const reply = () => ({ uids: [...state.uids], automations: state.automations });
+  return {
+    state,
+    messages: {
+      "ha_lists/reminders": reply,
+      "ha_lists/reminder/set": ({ uid, enabled }) => {
+        if (enabled) state.uids.add(uid); else state.uids.delete(uid);
+        return reply();
+      },
+      "ha_lists/reminders/blueprint": () => ({
+        path: "ha_lists/task_reminders.yaml", yaml: "blueprint: {}", source_url: "https://example.invalid/bp.yaml",
+      }),
+      "blueprint/save": () => { if (failSave) throw Error("save refused"); return { overrides_existing: false }; },
+    },
+  };
+}
+
+test("the bell toggles a task reminder and shows its state", async () => {
+  const backend = reminderBackend();
+  const { panel, requests } = await setup({ messages: backend.messages, items: [
+    { uid: "one", summary: "Water plants", due: "2030-05-15" },
+  ] });
+  openRename(panel, "Water plants");
+  await tick();
+  const bell = deleteButton(panel, "Reminder");
+  assert.ok(bell, "bell appears once reminder state loads");
+  assert.equal(bell.getAttribute("aria-pressed"), "false");
+  bell.click();
+  await tick(); await tick();
+  assert.deepEqual(backend.state.uids, new Set(["one"]));
+  assert.equal(bell.getAttribute("aria-pressed"), "true");
+  assert.equal(bell.title, "Reminder on");
+  assert.ok(requests.some((request) => request.type === "ha_lists/reminder/set" && request.enabled === true));
+  bell.click();
+  await tick(); await tick();
+  assert.equal(bell.getAttribute("aria-pressed"), "false");
+  assert.deepEqual(backend.state.uids, new Set());
+});
+
+test("bell is hidden when reminders are unavailable for a list", async () => {
+  const { panel } = await setup({ items: [{ uid: "one", summary: "Water plants" }] });
+  openRename(panel, "Water plants");
+  await tick(); await tick();
+  assert.equal(deleteButton(panel, "Reminder"), undefined);
+});
+
+test("first reminder offers one-tap setup that installs the blueprint and opens the automation", async () => {
+  const backend = reminderBackend({ uids: ["one"] });
+  const { panel, window, requests, apiCalls } = await setup({ messages: backend.messages, items: [
+    { uid: "one", summary: "Water plants", due: "2030-05-15" },
+  ] });
+  const navigations = [];
+  window.addEventListener("location-changed", () => navigations.push(window.location.pathname));
+  openRename(panel, "Water plants");
+  await tick();
+  assert.equal(panel._reminderNote.hidden, false);
+  assert.match(panel._reminderNoteText.textContent, /need a reminder automation/);
+  panel._reminderSetup.click();
+  for (let step = 0; step < 6; step++) await tick();
+  const save = requests.find((request) => request.type === "blueprint/save");
+  assert.deepEqual({ ...save, id: undefined }, {
+    type: "blueprint/save", domain: "automation", path: "ha_lists/task_reminders.yaml", yaml: "blueprint: {}",
+    source_url: "https://example.invalid/bp.yaml", allow_override: true, id: undefined,
+  });
+  assert.equal(apiCalls.length, 1);
+  assert.equal(apiCalls[0].method, "POST");
+  assert.match(apiCalls[0].path, /^config\/automation\/config\/\d+$/);
+  assert.deepEqual(JSON.parse(JSON.stringify(apiCalls[0].body.use_blueprint)), { path: "ha_lists/task_reminders.yaml", input: {} });
+  assert.equal(panel._editError.textContent, "");
+  assert.deepEqual(navigations, ["/config/automation/edit/" + apiCalls[0].path.split("/").pop()]);
+  assert.equal(panel._reminderNote.hidden, true, "no setup prompt once an automation exists");
+});
+
+test("reminder setup falls back to the import link, and non-admins are told to ask an admin", async () => {
+  const backend = reminderBackend({ uids: ["one"], failSave: true });
+  const { panel, apiCalls } = await setup({ messages: backend.messages, items: [
+    { uid: "one", summary: "Water plants", due: "2030-05-15" },
+  ] });
+  openRename(panel, "Water plants");
+  await tick();
+  panel._reminderSetup.click();
+  await tick(); await tick();
+  assert.equal(apiCalls.length, 0);
+  assert.match(panel._editError.textContent, /save refused.*Import blueprint/);
+  assert.equal(panel._reminderImport.hidden, false);
+  assert.equal(panel._reminderImport.href,
+    "https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fexample.invalid%2Fbp.yaml");
+  const viewer = await setup({ user: { is_admin: false }, messages: reminderBackend({ uids: ["one"] }).messages,
+    items: [{ uid: "one", summary: "Water plants", due: "2030-05-15" }] });
+  openRename(viewer.panel, "Water plants");
+  await tick();
+  assert.match(viewer.panel._reminderNoteText.textContent, /Ask a Home Assistant administrator/);
+  assert.equal(viewer.panel._reminderSetup.hidden, true);
+});
+
+test("a reminder without a due date asks for one", async () => {
+  const backend = reminderBackend({ uids: ["one"], automations: 1 });
+  const { panel } = await setup({ messages: backend.messages, supportedFeatures: 4 | 16,
+    items: [{ uid: "one", summary: "Someday" }] });
+  openRename(panel, "Someday");
+  await tick();
+  assert.equal(panel._reminderNote.hidden, false);
+  assert.equal(panel._reminderNoteText.textContent, "Add a due date to get a reminder.");
 });

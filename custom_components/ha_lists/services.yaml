@@ -1,0 +1,11 @@
+get_due_tasks:
+  fields:
+    include_overdue:
+      default: false
+      selector:
+        boolean:
+    entity_id:
+      selector:
+        entity:
+          domain: todo
+          multiple: true

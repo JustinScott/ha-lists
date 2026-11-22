@@ -830,25 +830,26 @@ class HaListsPanel extends HTMLElement {
   }
 
   openTaskEditor(item) {
-    this._edit = {
-      uid: item.uid,
-      title: item.summary || "",
-      description: item.description || "",
-      due: item.due || "",
-      timedDue: Boolean(item.due && !/^\d{4}-\d{2}-\d{2}$/.test(item.due)),
-      saving: false, confirmingDelete: false, error: "",
-    };
-    this._titleInput.value = this._edit.title;
-    this._descriptionInput.value = this._edit.description;
-    const local = this._edit.timedDue ? new Date(this._edit.due) : null;
+    // Opening another task saves the current one in the background.
+    if (this._edit) this.persistEdit();
+    const due = item.due || "";
+    const timedDue = Boolean(due && !/^\d{4}-\d{2}-\d{2}$/.test(due));
+    const local = timedDue ? new Date(due) : null;
     const pad = (value) => String(value).padStart(2, "0");
+    this._titleInput.value = item.summary || "";
+    this._descriptionInput.value = item.description || "";
     this._dueInput.value = local
-      ? `${local.getFullYear()}-${pad(local.getMonth() + 1)}-${pad(local.getDate())}`
-      : this._edit.due;
+      ? `${local.getFullYear()}-${pad(local.getMonth() + 1)}-${pad(local.getDate())}` : due;
     this._dueTimeInput.value = local
       ? `${pad(local.getHours())}:${pad(local.getMinutes())}:${pad(local.getSeconds())}` : "";
-    this._edit.dateValue = this._dueInput.value;
-    this._edit.timeValue = this._dueTimeInput.value;
+    this._edit = {
+      uid: item.uid, entityId: this._selected, due, timedDue,
+      // The last values known to be stored natively; edits are compared with these.
+      saved: this.editSnapshot(),
+      history: [], timer: null, current: null, again: false,
+      saving: false, status: "", confirmingDelete: false, error: "", closeAttempted: "",
+    };
+    this.loadReminders(this._selected);
     this.render();
     if (this._titleInput.hidden) {
       this._deleteTask.focus();
@@ -866,29 +867,49 @@ class HaListsPanel extends HTMLElement {
     (button || this._input).focus();
   }
 
-  async saveTask() {
+  // Close (✕, Escape, Enter in the title): save what is pending first. If that
+  // fails, stay open with the error; closing again discards the unsaved change.
+  async finishEditing() {
     const edit = this._edit;
-    const entityId = this._selected;
-    const title = this._titleInput.value.trim();
-    const entity = this.availableLists.find((candidate) => candidate.entity_id === entityId);
-    if (!edit || edit.saving || edit.confirmingDelete || !title || !this.supportsTaskAction(entity, UPDATE_TODO_ITEM)) return;
+    if (!edit || edit.confirmingDelete) return;
+    if (!this._titleInput.value.trim()) this._titleInput.value = edit.saved.title;
+    // Closing again with the same unsaveable values discards them.
+    const attempt = JSON.stringify(this.editSnapshot());
+    if (edit.error && edit.closeAttempted === attempt) {
+      clearTimeout(edit.timer);
+      this.closeTaskEditor(edit.uid);
+      return;
+    }
+    edit.closeAttempted = attempt;
+    edit.error = "";
+    if (await this.flushEdit() && this._edit === edit) this.closeTaskEditor(edit.uid);
+  }
+
+  editSnapshot() {
+    return {
+      title: this._titleInput.value.trim(), description: this._descriptionInput.value,
+      date: this._dueInput.value, time: this._dueTimeInput.value,
+    };
+  }
+
+  // Native changes needed to store the editor's current values. `incomplete`
+  // errors (a time without a date) only matter once the person stops editing.
+  pendingChanges(edit) {
+    const entity = this.availableLists.find((candidate) => candidate.entity_id === edit.entityId);
+    const values = this.editSnapshot();
     const changes = {};
-    if (title !== edit.title) changes.rename = title;
-    if (this.supportsTaskAction(entity, SET_DESCRIPTION_ON_ITEM)
-        && this._descriptionInput.value !== edit.description) {
-      changes.description = this._descriptionInput.value || null;
+    if (!this.supportsTaskAction(entity, UPDATE_TODO_ITEM)) return { changes, values };
+    if (!values.title) values.title = edit.saved.title;
+    if (values.title !== edit.saved.title) changes.rename = values.title;
+    if (this.supportsTaskAction(entity, SET_DESCRIPTION_ON_ITEM) && values.description !== edit.saved.description) {
+      changes.description = values.description || null;
     }
     const canSetTime = this.supportsTaskAction(entity, SET_DUE_DATETIME_ON_ITEM);
     const canSetDate = this.supportsTaskAction(entity, SET_DUE_DATE_ON_ITEM);
-    const dateChanged = this._dueInput.value !== edit.dateValue;
-    const timeChanged = this._dueTimeInput.value !== edit.timeValue;
-    if ((canSetTime || (canSetDate && !edit.timedDue)) && (dateChanged || timeChanged)) {
-      const date = this._dueInput.value;
-      const time = this._dueTimeInput.value;
+    const { date, time } = values;
+    if ((canSetTime || (canSetDate && !edit.timedDue)) && (date !== edit.saved.date || time !== edit.saved.time)) {
       if (time && !date) {
-        edit.error = "Choose a due date for this time, or clear the time.";
-        this.renderEditor();
-        return;
+        return { changes, values, error: "Choose a due date for this time, or clear the time.", incomplete: true };
       }
       if (!date) {
         changes[canSetTime ? "due_datetime" : "due_date"] = null;
@@ -900,55 +921,198 @@ class HaListsPanel extends HTMLElement {
             || local.getMonth() + 1 !== month || local.getDate() !== day
             || local.getHours() !== hour || local.getMinutes() !== minute
             || local.getSeconds() !== second) {
-          edit.error = "This time does not exist in your time zone. Choose another time.";
-          this.renderEditor();
-          return;
+          return { changes, values, error: "This time does not exist in your time zone. Choose another time." };
         }
         changes.due_datetime = local.toISOString();
       } else if (canSetDate) {
         changes.due_date = date;
       } else {
-        edit.error = "This list requires a time with its due date.";
-        this.renderEditor();
-        return;
+        return { changes, values, error: "This list requires a time with its due date.", incomplete: true };
       }
+    }
+    return { changes, values };
+  }
+
+  // Text saves after a pause in typing; dates and blur save sooner.
+  scheduleEditSave(delay) {
+    const edit = this._edit;
+    if (!edit) return;
+    clearTimeout(edit.timer);
+    edit.timer = setTimeout(() => { edit.timer = null; if (this._edit === edit) this.persistEdit({ quiet: true }); }, delay);
+    this.renderEditor();
+  }
+
+  persistEdit({ quiet = false, undo = false } = {}) {
+    const edit = this._edit;
+    if (!edit || edit.confirmingDelete) return null;
+    clearTimeout(edit.timer);
+    edit.timer = null;
+    if (edit.current) { edit.again = true; return edit.current; }
+    const { changes, values, error, incomplete } = this.pendingChanges(edit);
+    if (error) {
+      if (!(quiet && incomplete)) { edit.error = error; this.renderEditor(); }
+      return null;
     }
     if (!Object.keys(changes).length) {
-      this.closeTaskEditor(edit.uid);
-      return;
+      if (edit.error && !edit.saving) { edit.error = ""; this.renderEditor(); }
+      return null;
     }
+    edit.current = this.writeEdit(edit, changes, values, undo).finally(() => {
+      edit.current = null;
+      if (edit.again && this._edit === edit) { edit.again = false; this.persistEdit({ quiet: true }); }
+    });
+    return edit.current;
+  }
 
+  async writeEdit(edit, changes, values, undo) {
+    const entityId = edit.entityId;
+    const connection = this._connection;
     edit.saving = true;
+    edit.status = "Saving…";
     edit.error = "";
-    this.render();
+    if (this._edit === edit) this.renderEditor();
     try {
-      const { items } = await this._connection.sendMessagePromise({
-        type: "todo/item/list", entity_id: entityId,
-      });
-      if (this._edit !== edit || !this.isConnected) return;
+      // Re-read first so a change made elsewhere is never overwritten.
+      const { items } = await connection.sendMessagePromise({ type: "todo/item/list", entity_id: entityId });
       const current = items?.find((item) => item.uid === edit.uid);
       if (!current
-          || ("rename" in changes && (current.summary || "") !== edit.title)
-          || ("description" in changes && (current.description || "") !== edit.description)
+          || ("rename" in changes && (current.summary || "") !== edit.saved.title)
+          || ("description" in changes && (current.description || "") !== edit.saved.description)
           || (("due_date" in changes || "due_datetime" in changes) && (current.due || "") !== edit.due)) {
-        await this.loadItems();
-        throw new Error("This task changed elsewhere. Cancel and reopen it to edit the latest version.");
+        if (this._selected === entityId) await this.loadItems();
+        throw new Error("This task changed elsewhere. Close and reopen it to edit the latest version.");
       }
-      await this._hass.callService("todo", "update_item", {
-        entity_id: entityId, item: edit.uid, ...changes,
-      });
-      if (this._edit !== edit || !this.isConnected) return;
-      await this.loadItems();
-      if (this._edit === edit && this.isConnected) this.closeTaskEditor(edit.uid);
+      await this._hass.callService("todo", "update_item", { entity_id: entityId, item: edit.uid, ...changes });
+      if (!undo) edit.history.push(edit.saved);
+      edit.saved = values;
+      if (this._selected === entityId) await this.loadItems();
+      const stored = this._items.find((item) => item.uid === edit.uid);
+      if (stored && this._selected === entityId) {
+        edit.due = stored.due || "";
+        edit.timedDue = Boolean(edit.due && !/^\d{4}-\d{2}-\d{2}$/.test(edit.due));
+      }
+      edit.status = "Saved";
     } catch (error) {
+      edit.status = "";
+      edit.error = "Unable to save task: " + (error?.message || String(error));
+    } finally {
+      edit.saving = false;
+      if (this._edit === edit) this.render();
+    }
+  }
+
+  // Wait for every pending save; false when something could not be stored.
+  async flushEdit() {
+    const edit = this._edit;
+    if (!edit) return true;
+    clearTimeout(edit.timer);
+    for (let attempt = 0; attempt < 5 && this._edit === edit; attempt++) {
+      if (edit.current) { await edit.current; continue; }
+      if (edit.error) return false;
+      const pending = this.persistEdit();
+      if (!pending) return !edit.error;
+      await pending;
+    }
+    return !edit.error;
+  }
+
+  // Undo first discards unsaved typing; otherwise it restores, one step at a
+  // time, the values from before each save made since the editor opened.
+  async undoEdit() {
+    const edit = this._edit;
+    if (!edit || edit.saving) return;
+    clearTimeout(edit.timer);
+    const { changes, error } = this.pendingChanges(edit);
+    const dirty = Boolean(error) || Object.keys(changes).length > 0 || this._titleInput.value.trim() !== edit.saved.title;
+    const target = dirty ? edit.saved : edit.history.pop();
+    if (!target) return;
+    this._titleInput.value = target.title;
+    this._descriptionInput.value = target.description;
+    this._dueInput.value = target.date;
+    this._dueTimeInput.value = target.time;
+    edit.error = "";
+    if (dirty) { edit.status = ""; this.renderEditor(); return; }
+    await this.persistEdit({ undo: true });
+    this.renderEditor();
+  }
+
+  // Bell: per-task reminder flags shared through HA Lists storage.
+  async loadReminders(entityId) {
+    const connection = this._connection;
+    if (!connection || !entityId) return;
+    try {
+      const result = await connection.sendMessagePromise({ type: "ha_lists/reminders", entity_id: entityId });
+      if (connection === this._connection) this.applyReminders(entityId, result);
+    } catch (_error) {
+      // Older backends or lists outside HA Lists: the bell stays hidden.
+      if (this._reminders?.entityId === entityId) this._reminders = null;
+    }
+    this.renderEditor();
+  }
+
+  applyReminders(entityId, result) {
+    this._reminders = { entityId, uids: new Set(result.uids || []), automations: result.automations || 0 };
+  }
+
+  reminderOn(edit = this._edit) {
+    return Boolean(edit && this._reminders?.entityId === edit.entityId && this._reminders.uids.has(edit.uid));
+  }
+
+  async toggleReminder() {
+    const edit = this._edit;
+    if (!edit || edit.reminderBusy || this._reminders?.entityId !== edit.entityId) return;
+    edit.reminderBusy = true;
+    edit.error = "";
+    this.renderEditor();
+    try {
+      const result = await this._connection.sendMessagePromise({
+        type: "ha_lists/reminder/set", entity_id: edit.entityId, uid: edit.uid, enabled: !this.reminderOn(edit),
+      });
+      this.applyReminders(edit.entityId, result);
+    } catch (error) {
+      if (this._edit === edit) edit.error = "Unable to change the reminder: " + (error?.message || String(error));
+    } finally {
+      edit.reminderBusy = false;
+      this.renderEditor();
+    }
+  }
+
+  // One tap: install the bundled blueprint, create an automation from it with
+  // default inputs, and open that automation in HA's editor to customize.
+  async setupReminders() {
+    const edit = this._edit;
+    const connection = this._connection;
+    if (!edit || this._reminderSetupBusy) return;
+    this._reminderSetupBusy = true;
+    edit.error = "";
+    this.renderEditor();
+    let blueprint = null;
+    try {
+      blueprint = await connection.sendMessagePromise({ type: "ha_lists/reminders/blueprint" });
+      await connection.sendMessagePromise({
+        type: "blueprint/save", domain: "automation", path: blueprint.path,
+        yaml: blueprint.yaml, source_url: blueprint.source_url, allow_override: true,
+      });
+      const id = String(Date.now());
+      await this._hass.callApi("POST", `config/automation/config/${id}`, {
+        alias: "Task reminders",
+        description: "Created by HA Lists. Choose the reminder time, repeat and what to do (for example, notify your phone).",
+        use_blueprint: { path: blueprint.path, input: {} },
+      });
+      this._reminders = { ...this._reminders, automations: (this._reminders?.automations || 0) + 1 };
+      await this.flushEdit();
+      history.pushState(null, "", `/config/automation/edit/${id}`);
+      window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: false } }));
+    } catch (error) {
+      const url = blueprint?.source_url
+        || "https://github.com/JustinScott/ha-lists/blob/main/custom_components/ha_lists/blueprints/automation/task_reminders.yaml";
+      this._reminderImportUrl = "https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=" + encodeURIComponent(url);
       if (this._edit === edit) {
-        edit.error = "Unable to save task: " + (error?.message || String(error));
+        edit.error = "Automatic setup did not finish: " + (error?.message || String(error)) + " Use Import blueprint instead.";
       }
     } finally {
-      if (this._edit === edit) {
-        edit.saving = false;
-        this.render();
-      }
+      this._reminderSetupBusy = false;
+      this.renderEditor();
     }
   }
 
@@ -1116,6 +1280,16 @@ class HaListsPanel extends HTMLElement {
         .edit-field textarea { resize:vertical; min-height:4em; }
         .timed-deadline { flex-basis:100%; }
         .delete-confirmation { flex-basis:100%; }
+        .edit-tools { display:flex; align-items:center; justify-content:flex-end; gap:4px; flex-basis:100%; }
+        .edit-tools .save-status { margin-inline-end:auto; font-size:.875em; }
+        .edit-tools button { display:grid; place-items:center; width:40px; height:40px; padding:8px; color:inherit; background:transparent; border:0; border-radius:50%; cursor:pointer; }
+        .edit-tools button:disabled { opacity:.4; cursor:default; }
+        .edit-tools .delete-action { color:var(--error-color); }
+        .edit-tools .bell[aria-pressed=true] { color:var(--primary-color); }
+        .edit-tools .tool-icon { display:block; width:24px; height:24px; fill:currentColor; }
+        .reminder-note { flex-basis:100%; display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:8px 12px; border-radius:8px; background:var(--secondary-background-color); }
+        .reminder-note p { margin:0; flex:1 1 220px; }
+        .reminder-note button { min-height:40px; font:inherit; padding:0 12px; color:var(--text-primary-color,#fff); background:var(--primary-color); border:0; border-radius:20px; cursor:pointer; }
         .delete-action { color:var(--error-color); }
         form button { padding:10px 14px; font:inherit; cursor:pointer; }
         li { padding:10px 0; border-bottom:1px solid var(--divider-color); display:flex; align-items:center; gap:12px; }
@@ -1673,43 +1847,72 @@ class HaListsPanel extends HTMLElement {
       this._titleInput.className = "title-input";
       this._titleInput.required = true;
       this._titleInput.maxLength = 255;
-      this._titleInput.addEventListener("input", () => this.renderEditor());
+      // Autosave: text after a pause in typing or on leaving the field; dates
+      // and times shortly after a change (so a date and its time combine).
+      this._titleInput.addEventListener("input", () => this.scheduleEditSave(1500));
+      this._titleInput.addEventListener("change", () => this.persistEdit());
       this._descriptionField = document.createElement("label");
       this._descriptionField.className = "edit-field";
       this._descriptionInput = document.createElement("textarea");
       this._descriptionField.append("Description", this._descriptionInput);
+      this._descriptionInput.addEventListener("input", () => this.scheduleEditSave(1500));
+      this._descriptionInput.addEventListener("change", () => this.persistEdit());
       this._dueField = document.createElement("label");
       this._dueField.className = "edit-field";
       this._dueInput = document.createElement("input");
       this._dueInput.type = "date";
       this._dueField.append("Due date", this._dueInput);
+      this._dueInput.addEventListener("change", () => this.scheduleEditSave(800));
       this._dueTimeField = document.createElement("label");
       this._dueTimeField.className = "edit-field";
       this._dueTimeInput = document.createElement("input");
       this._dueTimeInput.type = "time";
       this._dueTimeInput.step = "1";
       this._dueTimeField.append("Due time", this._dueTimeInput);
+      this._dueTimeInput.addEventListener("change", () => this.scheduleEditSave(800));
       this._clearDeadline = document.createElement("button");
       this._clearDeadline.type = "button";
       this._clearDeadline.textContent = "Clear deadline";
       this._clearDeadline.addEventListener("click", () => {
         this._dueInput.value = "";
         this._dueTimeInput.value = "";
+        this.persistEdit();
       });
       this._timedDeadline = document.createElement("p");
       this._timedDeadline.className = "timed-deadline";
-      this._saveTitle = document.createElement("button");
-      this._saveTitle.type = "submit";
-      this._saveTitle.textContent = "Save";
-      this._cancelTitle = document.createElement("button");
-      this._cancelTitle.type = "button";
-      this._cancelTitle.textContent = "Cancel";
-      this._cancelTitle.addEventListener("click", () => this.closeTaskEditor(this._edit.uid));
-      this._deleteTask = document.createElement("button");
-      this._deleteTask.type = "button";
-      this._deleteTask.className = "delete-action";
-      this._deleteTask.textContent = "Delete";
-      this._deleteTask.addEventListener("click", () => this.setDeleteConfirmation(true));
+      // Compact toolbar (2026-11-21): edits save automatically, so Save and
+      // Cancel became Undo; Delete still asks for confirmation.
+      this._editTools = document.createElement("div");
+      this._editTools.className = "edit-tools";
+      this._saveStatus = document.createElement("span");
+      this._saveStatus.className = "save-status muted";
+      this._saveStatus.setAttribute("aria-live", "polite");
+      const editTool = (label, path, handler, className = "") => {
+        const button = withIcon(actionButton("", handler), path, "tool-icon");
+        button.setAttribute("aria-label", label);
+        button.title = label;
+        if (className) button.classList.add(className);
+        return button;
+      };
+      this._bellPaths = {
+        off: "M10 21h4c0 1.1-.9 2-2 2s-2-.9-2-2m11-2v1H3v-1l2-2v-6c0-3.1 2-5.8 5-6.7V4c0-1.1.9-2 2-2s2 .9 2 2v.3c3 .9 5 3.6 5 6.7v6zm-4-8c0-2.8-2.2-5-5-5s-5 2.2-5 5v7h10z",
+        on: "M21 19v1H3v-1l2-2v-6c0-3.1 2.03-5.83 5-6.71V4a2 2 0 0 1 4 0v.29c2.97.88 5 3.61 5 6.71v6zm-7 2a2 2 0 0 1-4 0",
+      };
+      this._reminderToggle = editTool("Reminder", this._bellPaths.off, () => this.toggleReminder(), "bell");
+      this._reminderToggle.setAttribute("aria-pressed", "false");
+      this._undoEdit = editTool("Undo", "M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8", () => this.undoEdit());
+      this._deleteTask = editTool("Delete", "M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6zM8 9h8v10H8zm7.5-5-1-1h-5l-1 1H5v2h14V4z", () => this.setDeleteConfirmation(true), "delete-action");
+      this._closeEditor = editTool("Close task editor", "M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z", () => this.finishEditing());
+      this._editTools.append(this._saveStatus, this._reminderToggle, this._undoEdit, this._deleteTask, this._closeEditor);
+      this._reminderNote = document.createElement("div");
+      this._reminderNote.className = "reminder-note";
+      this._reminderNoteText = document.createElement("p");
+      this._reminderSetup = actionButton("Set up reminders", () => this.setupReminders());
+      this._reminderImport = document.createElement("a");
+      this._reminderImport.textContent = "Import blueprint";
+      this._reminderImport.target = "_blank";
+      this._reminderImport.rel = "noopener";
+      this._reminderNote.append(this._reminderNoteText, this._reminderSetup, this._reminderImport);
       this._deletePrompt = document.createElement("p");
       this._deletePrompt.className = "delete-confirmation";
       this._cancelDelete = document.createElement("button");
@@ -1723,19 +1926,19 @@ class HaListsPanel extends HTMLElement {
       this._confirmDelete.addEventListener("click", () => this.deleteItem());
       this._editForm.addEventListener("submit", (event) => {
         event.preventDefault();
-        this.saveTask();
+        this.finishEditing();
       });
       this._editForm.addEventListener("keydown", (event) => {
         if (event.key === "Escape" && this._edit && !this._edit.saving) {
           event.preventDefault();
           if (this._edit.confirmingDelete) this.setDeleteConfirmation(false);
-          else this.closeTaskEditor(this._edit.uid);
+          else this.finishEditing();
         }
       });
       this._editForm.append(
+        this._editTools, this._reminderNote,
         this._titleLabel, this._titleInput, this._descriptionField, this._dueField, this._dueTimeField, this._clearDeadline,
-        this._timedDeadline, this._saveTitle, this._cancelTitle, this._deleteTask,
-        this._deletePrompt, this._cancelDelete, this._confirmDelete,
+        this._timedDeadline, this._deletePrompt, this._cancelDelete, this._confirmDelete,
       );
       this._editError = document.createElement("p");
       this._editError.className = "error";
@@ -1759,7 +1962,10 @@ class HaListsPanel extends HTMLElement {
       button.setAttribute("aria-current", String(entity.entity_id === this._selected));
       button.dataset.entityId = entity.entity_id;
       button.addEventListener("click", () => {
-        if (this._selected !== entity.entity_id) this._edit = null;
+        if (this._selected !== entity.entity_id && this._edit) {
+          this.persistEdit();
+          this._edit = null;
+        }
         this._listMenuOpen = false;
         this._selected = entity.entity_id;
         this.closeListDrawer();
@@ -1883,7 +2089,7 @@ class HaListsPanel extends HTMLElement {
     const canRename = this.supportsTaskAction(selected, UPDATE_TODO_ITEM);
     const canDelete = this.supportsTaskAction(selected, DELETE_TODO_ITEM);
     this._editForm.hidden = !edit;
-    this._titleLabel.hidden = this._titleInput.hidden = this._saveTitle.hidden = confirming || !canRename;
+    this._titleLabel.hidden = this._titleInput.hidden = confirming || !canRename;
     const showDetails = Boolean(edit && canRename && !confirming);
     this._descriptionField.hidden = !showDetails || !this.supportsTaskAction(selected, SET_DESCRIPTION_ON_ITEM);
     const canSetTime = this.supportsTaskAction(selected, SET_DUE_DATETIME_ON_ITEM);
@@ -1891,24 +2097,47 @@ class HaListsPanel extends HTMLElement {
     this._dueField.hidden = !showDetails || (!canSetTime && (!canSetDate || edit?.timedDue));
     this._dueTimeField.hidden = !showDetails || !canSetTime;
     this._clearDeadline.hidden = this._dueField.hidden;
-    this._clearDeadline.disabled = Boolean(edit?.saving);
     this._timedDeadline.hidden = !showDetails || (!canSetTime && !edit?.timedDue);
     this._timedDeadline.textContent = canSetTime
       ? "Time zone: " + Intl.DateTimeFormat().resolvedOptions().timeZone
       : "Due date and time: " + new Date(edit?.due).toLocaleString();
-    this._descriptionInput.readOnly = this._dueInput.readOnly = this._dueTimeInput.readOnly = Boolean(edit?.saving);
-    this._cancelTitle.hidden = confirming;
-    this._deleteTask.hidden = confirming || !canDelete;
+    // Fields stay editable while saving; the next save picks up new typing.
+    this._editTools.hidden = confirming;
+    this._saveStatus.textContent = edit?.error ? "" : edit?.status || "";
+    const reminders = edit && this._reminders?.entityId === edit.entityId;
+    const reminderOn = this.reminderOn(edit);
+    this._reminderToggle.hidden = !reminders || !edit?.uid;
+    this._reminderToggle.disabled = Boolean(edit?.reminderBusy);
+    this._reminderToggle.setAttribute("aria-pressed", String(reminderOn));
+    this._reminderToggle.title = reminderOn ? "Reminder on" : "Reminder off";
+    this._reminderToggle.querySelector("path").setAttribute("d", reminderOn ? this._bellPaths.on : this._bellPaths.off);
+    const { changes = {}, error } = edit ? this.pendingChanges(edit) : {};
+    const dirty = Boolean(edit) && (Boolean(error) || Object.keys(changes).length > 0);
+    this._undoEdit.hidden = !canRename;
+    this._undoEdit.disabled = !edit || edit.saving || (!dirty && !edit.history.length);
+    this._deleteTask.hidden = !canDelete;
     this._deleteTask.disabled = Boolean(edit?.saving);
+    // Setup or due-date hints appear only while this task's bell is on.
+    const needsSetup = reminderOn && !this._reminders.automations;
+    const needsDate = reminderOn && !this._dueInput.value && !edit?.due;
+    this._reminderNote.hidden = confirming || !(needsSetup || needsDate);
+    const admin = Boolean(this._hass?.user?.is_admin);
+    this._reminderNoteText.textContent = needsSetup
+      ? (admin ? "Reminders need a reminder automation. Set it up once; you'll choose how you are reminded."
+        : "Reminders need a reminder automation. Ask a Home Assistant administrator to set up task reminders.")
+      : needsDate ? "Add a due date to get a reminder." : "";
+    this._reminderSetup.hidden = !needsSetup || !admin;
+    this._reminderSetup.disabled = Boolean(this._reminderSetupBusy);
+    this._reminderImport.hidden = !this._reminderImportUrl || !admin || !needsSetup;
+    if (this._reminderImportUrl) this._reminderImport.href = this._reminderImportUrl;
     this._deletePrompt.hidden = this._cancelDelete.hidden = this._confirmDelete.hidden = !confirming;
-    this._deletePrompt.textContent = confirming ? `Delete “${edit.title || "Untitled task"}”?` : "";
+    this._deletePrompt.textContent = confirming ? `Delete “${edit.saved.title || "Untitled task"}”?` : "";
     this._cancelDelete.disabled = Boolean(edit?.saving);
     this._confirmDelete.disabled = Boolean(edit?.saving) || !canDelete;
-    this._titleInput.readOnly = Boolean(edit?.saving);
-    this._saveTitle.disabled = !edit || edit.saving || !this._titleInput.value.trim() || !this.supportsTaskAction(selected, UPDATE_TODO_ITEM);
-    this._cancelTitle.disabled = Boolean(edit?.saving);
     this._editError.hidden = !edit?.error;
-    this._editError.textContent = edit?.error || "";
+    this._editError.textContent = edit?.error
+      ? edit.error + (edit.closeAttempted === JSON.stringify(this.editSnapshot()) && !edit.saving
+        ? " Close again to discard unsaved changes." : "") : "";
   }
 
   renderListManagement() {

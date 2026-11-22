@@ -83,7 +83,7 @@ connect it, or explicitly confirm deletion of the pending list.
 
 ## Supported features and current limitations
 
-- **Available:** One local HA Lists config entry; administrator creation, connection, hiding and confirmed deletion of native Local To-do lists; named-list sidebar; task retrieval, creation, renaming, completion, reopening, and deletion; local per-list autocomplete/history for Local To-do; task title/description search; All/Active/Completed/Due today/Overdue filters; newest/oldest active-task sorting; per-list voice-assistant access (Assist, and Alexa/Google with Home Assistant Cloud); loading and error messages.
+- **Available:** One local HA Lists config entry; administrator creation, connection, hiding and confirmed deletion of native Local To-do lists; named-list sidebar; task retrieval, creation, renaming, completion, reopening, and deletion; local per-list autocomplete/history for Local To-do; task title/description search; All/Active/Completed/Due today/Overdue filters; newest/oldest active-task sorting; per-list voice-assistant access (Assist, and Alexa/Google with Home Assistant Cloud); automatic saving in the task editor with Undo; per-task due reminders through an automation blueprint; loading and error messages.
 - **Not yet available:** Creating/deleting third-party lists; rich metadata; cross-list suggestion sharing or fuzzy matching; Assist phrases beyond Home Assistant's built-in sentences (see Voice assistants); provider migration or import/export. Third-party import/export versus live editing remains a future design discussion; existing bindings and data are preserved.
 
 The underlying `todo` integrations remain the source of truth for tasks. Removing HA Lists does not intentionally remove provider tasks. Provider capabilities vary; not every provider exposes completed items or rich task fields.
@@ -115,6 +115,22 @@ a list name, and duplicate prevention. `tests_ha/test_assist_phrases.py` records
 this behavior against the real Assist agent; gaps are expected failures that the
 test run reports once they start working. Hands-free use needs a voice satellite
 (wake-word device) in your Assist pipeline.
+
+## Task reminders
+
+Open a task and tap the bell to remind yourself when it is due. The first time,
+administrators see **Set up reminders**: one tap installs the HA Lists reminder
+blueprint, creates a **Task reminders** automation and opens it so you can
+choose the daily reminder time, whether to repeat daily until the task is done,
+and what to do. For example, notify your phone with
+`notify.mobile_app_<your_phone>` or run your own script. In those actions,
+`task.summary`, `task.list_name`, `task.due` and `task.days_overdue` describe
+the task. Tasks with a due time are reminded at that time; tasks with only a
+date are reminded at the daily time.
+
+For other automations, HA Lists provides the `ha_lists_task_due` event (at a
+task's due time) and the `ha_lists.get_due_tasks` action (tasks due today, and
+optionally overdue ones). Only tasks with the bell on are included.
 
 ## Task suggestions (Local To-do)
 

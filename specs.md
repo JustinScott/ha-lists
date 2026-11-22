@@ -59,7 +59,7 @@ Build a free, local-first, application-style list manager integrated into Home A
 - Create, rename, configure, reorder and archive lists **where supported**. A logical application list maps to an explicitly configured `todo` entity; do not assume generic HA services can create/delete provider lists.
 - Fast add, checkbox complete/reopen, inline rename, remove with confirmation/undo where feasible, filter active/completed, sorting and searching.
 - Clicking an item name opens a richer editor: title, description/instructions, due date, priority, additional notes, links, optional categories, subtasks, reference materials and future attachments.
-- Desktop task detail: side pane/dialog; Android: full-screen detail view. Save/cancel and unsaved-change warning.
+- Desktop task detail: side pane/dialog; Android: full-screen detail view. Edits save automatically (owner decision 2026-11-21, replacing Save/Cancel and the unsaved-change warning); see Milestone 2 — task title editing.
 - List-specific presentation templates: **Simple/Grocery** mode defaults to compact entry; **Projects/Home Improvement** mode enables detailed fields; fields remain accessible regardless of mode.
 - Optional grocery enhancements: quantity/unit, store section, frequent items, category grouping, quick-add shortcuts.
 - Avoid unnecessary modals, icon-only navigation and swipe-only controls. The
@@ -210,6 +210,39 @@ other todo entities
   browser workflow toggles Assist in the panel and verifies
   `/api/conversation/process` adds to the list only while exposed.
 
+### Task reminders (approved 2026-11-21)
+
+- HA Lists decides which tasks are due; the person's automation decides what
+  happens (notification, script, announcement). HA Lists never sends
+  notifications itself and has no reminder settings screen.
+- Per-task bell in the editor turns a reminder on or off (default off). Flags
+  are HA Lists metadata in versioned HA storage (`ha_lists.reminders`), keyed by
+  list entity ID and task UID, following entity renames/removals; flags for
+  deleted tasks are dropped. Changing a flag needs the same control permission
+  as editing the task; only configured lists qualify.
+- Event `ha_lists_task_due` fires at the exact due time of each bell-on,
+  incomplete task with a due time, after re-reading the native task. Timers are
+  re-armed from native snapshots on startup and on every list report.
+- Action `ha_lists.get_due_tasks` (response only) returns bell-on, incomplete
+  tasks with a date-only due today, plus, with `include_overdue`, tasks due on
+  earlier days. Timed tasks due today are excluded so a daily run never repeats
+  that day's event. Optional `entity_id` limits the lists.
+- Task data (event and action): `entity_id`, `list_name`, `uid`, `summary`,
+  `description`, `due`, `all_day`, `days_overdue`.
+- Bundled blueprint `blueprints/automation/task_reminders.yaml` (installed as
+  `ha_lists/task_reminders.yaml`): daily reminder time, repeat daily until done,
+  optional list filter, and reminder actions run once per task with `task`.
+  Default action is a persistent notification.
+- One-tap setup (owner decision 2026-11-21): when a bell is on and no
+  automation uses the blueprint, administrators see "Set up reminders". The
+  panel saves the bundled blueprint through HA's `blueprint/save` WebSocket
+  command, creates "Task reminders" through HA's automation config API, and
+  opens it in HA's automation editor. These are the commands HA's own frontend
+  uses, admin-only and not documented for integrations; this was accepted
+  knowingly. If setup fails, the panel offers the standard My Home Assistant
+  blueprint import link. Non-administrators are told to ask an administrator.
+  A bell on a task without a due date prompts for one.
+
 ## 5. Home Assistant integration implementation standards
 
 - Implement as a properly structured custom integration under `custom_components/<domain>/` plus a separately built frontend bundle. Choose and document a unique domain before coding.
@@ -318,8 +351,10 @@ other todo entities
 
 ### Milestone 2 — task title editing
 
-- Selecting an editable task title opens a title field with Save and Cancel. Enable editing for lists that support native item updates and tasks with a stable provider UID.
-- Save sends the trimmed title through the native To-do update action. Cancel discards the draft. A failed save preserves the draft and displays the error.
+- Selecting an editable task title opens the task editor. Enable editing for lists that support native item updates and tasks with a stable provider UID.
+- Autosave (owner decision 2026-11-21): there are no Save or Cancel buttons. Title and description save 1.5 s after typing stops or when the field is left; date and time save 0.8 s after a change so a date and its time combine into one write. Closing (✕, Escape, Enter in the title) saves anything pending first. Never write per keystroke. An emptied title is never sent; closing restores the saved title. A time without a date waits silently while typing and is reported on close; impossible local times are reported at once.
+- The editor's top row holds compact labelled icons: Reminder (bell, see Task reminders), Undo, Delete (still confirmed) and Close, with a small "Saving…/Saved" status. Undo first discards unsaved typing; otherwise it writes back, one step per tap, the values from before each save made since the editor opened.
+- Saves send trimmed titles and only changed fields through the native To-do update action. A failed save keeps the editor open with the draft and the error; closing again with the same values discards them. Opening another task or switching lists saves the open edit in the background.
 - Before saving, fetch the current task by UID. If it was removed or its title changed since editing began, preserve the draft and ask the user to reopen the task. The native update action does not provide an atomic compare-and-set.
 - Verify that native To-do reflects a rename made in HA Lists without refreshing the browser. Verify that the renamed task retains its UID and existing fields after a Local To-do restart.
 

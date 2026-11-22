@@ -18,6 +18,7 @@ import { verifySuggestions } from "./suggestion-checks.mjs";
 import { verifyListDrawer } from "./drawer-checks.mjs";
 import { verifySteadyEntry } from "./entry-checks.mjs";
 import { verifyVoiceAccess } from "./voice-checks.mjs";
+import { verifyReminderSetup } from "./reminder-checks.mjs";
 
 const docker = promisify(execFile);
 const image = "ghcr.io/home-assistant/home-assistant:2026.11.1";
@@ -296,7 +297,8 @@ test("native To-do and HA Lists share task changes across browser sessions", { t
     await lists.getByRole("textbox", { name: "Task title" }).fill(renamed);
     await lists.getByLabel("Description", { exact: true }).fill("Pick up the green ones");
     await lists.getByLabel("Due date", { exact: true }).fill("2030-04-05");
-    await lists.getByRole("button", { name: "Save", exact: true }).tap();
+    // Edits save automatically; closing flushes anything still pending.
+    await lists.getByRole("button", { name: "Close task editor", exact: true }).tap();
     await nativeCard.getByText(renamed, { exact: true }).waitFor();
     assert.equal(await nativeCard.getByText(item, { exact: true }).count(), 0);
     await nativeCard.getByText("Pick up the green ones", { exact: true }).waitFor();
@@ -308,7 +310,7 @@ test("native To-do and HA Lists share task changes across browser sessions", { t
     for (const [date, utcHour] of [["2030-07-05", 15], ["2030-01-05", 16]]) {
       await dueDate.fill(date);
       await dueTime.fill("10:30:00");
-      await lists.getByRole("button", { name: "Save", exact: true }).tap();
+      await lists.getByRole("button", { name: "Close task editor", exact: true }).tap();
       await lists.getByRole("button", { name: `Rename ${renamed}` }).tap();
       assert.equal(await dueDate.inputValue(), date);
       assert.match(await dueTime.inputValue(), /^10:30/);
@@ -320,12 +322,11 @@ test("native To-do and HA Lists share task changes across browser sessions", { t
     }
     await dueDate.fill("2030-03-10");
     await dueTime.fill("02:30:00");
-    await lists.getByRole("button", { name: "Save", exact: true }).tap();
-    await lists.getByText("This time does not exist in your time zone. Choose another time.", { exact: true }).waitFor();
+    await lists.getByText("This time does not exist in your time zone. Choose another time.").waitFor();
     assert.equal(await dueDate.inputValue(), "2030-03-10");
     await lists.getByRole("button", { name: "Clear deadline", exact: true }).tap();
     await lists.getByLabel("Description", { exact: true }).fill("");
-    await lists.getByRole("button", { name: "Save", exact: true }).tap();
+    await lists.getByRole("button", { name: "Close task editor", exact: true }).tap();
     await nativeCard.getByText("Pick up the green ones", { exact: true }).waitFor({ state: "detached" });
     await nativeTask.locator(".due").waitFor({ state: "detached" });
 
@@ -352,6 +353,7 @@ test("native To-do and HA Lists share task changes across browser sessions", { t
     assert.equal(await nativeCard.getByText(renamed, { exact: true }).count(), 1);
     await verifyListManagement({ browser, page: lists, native, base, token, post, openPanel, username, password, entityId });
     await verifySuggestions({ browser, page: lists, base, token, post, openPanel, username, password });
+    await verifyReminderSetup({ browser, base, token, post, openPanel, username, password, entityId, listName });
   } catch (error) {
     if (lists) process.stderr.write(await lists.locator("ha-lists-panel").ariaSnapshot().catch(() => "") + "\n");
     const logs = created && await docker("docker", ["logs", "--tail", "50", name],

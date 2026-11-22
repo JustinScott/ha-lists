@@ -1,0 +1,91 @@
+blueprint:
+  name: HA Lists task reminders
+  description: >-
+    Remind about HA Lists tasks whose bell is on. Tasks with a due time are
+    reminded at that time; tasks with only a due date are reminded at the
+    daily reminder time. The reminder actions run once per task. Inside them,
+    use `task.summary`, `task.list_name`, `task.description`, `task.due`,
+    `task.days_overdue`, `task.entity_id` and `task.uid`, for example
+    "{{ task.summary }} is due".
+  domain: automation
+  source_url: https://github.com/JustinScott/ha-lists/blob/main/custom_components/ha_lists/blueprints/automation/task_reminders.yaml
+  input:
+    reminder_time:
+      name: Daily reminder time
+      description: When to remind about tasks that have a due date but no time.
+      default: "09:00:00"
+      selector:
+        time: {}
+    repeat_daily:
+      name: Repeat daily until done
+      description: Keep reminding at the daily reminder time while a task is overdue and incomplete.
+      default: true
+      selector:
+        boolean: {}
+    lists:
+      name: Only these lists
+      description: Leave empty to remind for every HA Lists list.
+      default: []
+      selector:
+        entity:
+          domain: todo
+          multiple: true
+    reminder_actions:
+      name: Reminder actions
+      description: >-
+        What to do for each due task, such as notifying your phone or running
+        your own script. Use `task.summary` and the other task fields in templates.
+      default:
+        - action: persistent_notification.create
+          data:
+            title: "Task due: {{ task.summary }}"
+            message: >-
+              {{ task.list_name }}{{ ' · ' ~ task.days_overdue ~ ' day(s) overdue'
+              if task.days_overdue > 0 else '' }}
+            notification_id: "ha_lists_{{ task.uid }}"
+      selector:
+        action: {}
+
+mode: queued
+max: 20
+
+triggers:
+  - trigger: time
+    at: !input reminder_time
+    id: daily
+  - trigger: event
+    event_type: ha_lists_task_due
+    id: due
+
+variables:
+  repeat_daily: !input repeat_daily
+  lists: !input lists
+
+actions:
+  - choose:
+      - conditions: "{{ trigger.id == 'due' }}"
+        sequence:
+          - repeat:
+              for_each: >-
+                {{ [trigger.event.data] if not lists
+                or trigger.event.data.entity_id in lists else [] }}
+              sequence:
+                - variables:
+                    task: "{{ repeat.item }}"
+                - choose:
+                    - conditions: "{{ true }}"
+                      sequence: !input reminder_actions
+    default:
+      - action: ha_lists.get_due_tasks
+        data:
+          include_overdue: "{{ repeat_daily }}"
+          entity_id: "{{ lists }}"
+        response_variable: due
+      - repeat:
+          for_each: "{{ due.tasks }}"
+          sequence:
+            - variables:
+                task: "{{ repeat.item }}"
+            - choose:
+                - conditions: "{{ true }}"
+                  sequence: !input reminder_actions

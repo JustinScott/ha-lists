@@ -37,6 +37,25 @@
     },
     "assistant_unavailable": {
       "message": "That voice assistant is not available in Home Assistant."
+    },
+    "too_many_reminders": {
+      "message": "This list has too many reminders. Turn some off and try again."
+    }
+  },
+  "services": {
+    "get_due_tasks": {
+      "name": "Get due tasks",
+      "description": "Returns HA Lists tasks with reminders on that are due today, and optionally overdue tasks. Tasks with a due time get the ha_lists_task_due event on their due day instead.",
+      "fields": {
+        "include_overdue": {
+          "name": "Include overdue",
+          "description": "Also return incomplete tasks that were due on earlier days."
+        },
+        "entity_id": {
+          "name": "Lists",
+          "description": "Only these to-do lists. Leave empty for every HA Lists list."
+        }
+      }
     }
   },
   "options": {

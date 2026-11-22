@@ -1,6 +1,9 @@
 {
   "domain": "ha_lists",
   "name": "HA Lists",
+  "after_dependencies": [
+    "automation"
+  ],
   "codeowners": [],
   "config_flow": true,
   "dependencies": [

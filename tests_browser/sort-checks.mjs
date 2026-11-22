@@ -43,7 +43,9 @@ export async function verifyTaskSorting({ page, base, token, post, entityId, lis
     await expectTitles(["Sort older", "Sort newer", ...completed]);
     assert.equal(await title.inputValue(), "Unsent sorted editor");
     assert.equal(await quickAdd.inputValue(), "Unsent sorting draft");
-    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+    // Autosave: restore the original title, then close (saves nothing new).
+    await title.fill("Sort older");
+    await page.getByRole("button", { name: "Close task editor", exact: true }).click();
     await selectTaskView(page, "Show tasks", "completed");
     await expectTitles(completed);
     await selectTaskView(page, "Sort active tasks", "newest");

@@ -1,5 +1,36 @@
 # HA Lists — handoff for a new local Codex session
 
+## Autosave editor and task reminders (2026-11-21)
+
+- Owner decisions: no Save/Cancel (autosave + Undo + icon toolbar); per-task
+  bell; reminders delivered by a bundled blueprint; one-tap setup using HA's
+  admin `blueprint/save` command and automation config API (undocumented for
+  integrations; accepted knowingly, with the My Home Assistant import link as
+  fallback). See specs "Task reminders" and Milestone 2 task title editing.
+- Backend: `reminders.py` (flags in `ha_lists.reminders` keyed by entity ID +
+  UID, rename/removal following, deleted-task pruning, per-task timers firing
+  `ha_lists_task_due` after re-reading the native task, timers cancelled on HA
+  stop and unload, `ha_lists.get_due_tasks` response-only action),
+  `reminder_websocket.py` (read/control permission, admin-only blueprint text),
+  `blueprints/automation/task_reminders.yaml`, services.yaml and strings.
+- Panel: autosave (1.5 s text / 0.8 s date-time / blur / close flush), conflict
+  re-read before each write kept, Undo stack per editor session, close-again
+  discards an unsaveable edit, list switch saves in the background; bell,
+  setup note, fallback import link.
+- Tests: 10 HA tests (flags, permissions, timed event incl. reschedule and
+  completion, action rules, unloaded error, blueprint end to end with custom
+  and default actions, restart re-arming, renames); panel tests for autosave,
+  undo, discard, bell, setup and fallback; browser suite updated for autosave
+  and a new real-HA one-tap setup check (`reminder-checks.mjs`).
+- Verified here: `npm run test:all` (100 Python tests, 96.02% coverage, 84
+  panel tests). NOT run here: the installed-HA browser suite (no Docker or
+  Chromium in this environment). That suite is the only check of HA's real
+  blueprint/save + automation config API path; run it before deploying.
+- Known gaps: a timed reminder missed while HA was down is not replayed (the
+  daily repeat catches it next day); HA Lists itself does not yet follow list
+  entity renames in its list selection (pre-existing).
+
+
 ## Dictation Enter, compact list tools and drawer swipe (2026-11-21)
 
 - Bug: with Android speech-to-text, Enter/Done still did not add. Chrome on
