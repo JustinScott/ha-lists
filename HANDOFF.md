@@ -22,10 +22,13 @@
   and default actions, restart re-arming, renames); panel tests for autosave,
   undo, discard, bell, setup and fallback; browser suite updated for autosave
   and a new real-HA one-tap setup check (`reminder-checks.mjs`).
-- Verified here: `npm run test:all` (100 Python tests, 96.02% coverage, 84
-  panel tests). NOT run here: the installed-HA browser suite (no Docker or
-  Chromium in this environment). That suite is the only check of HA's real
-  blueprint/save + automation config API path; run it before deploying.
+- Verified: `npm run test:all` locally (100 Python tests, 96.02% coverage, 84
+  panel tests) and full GitHub CI including the installed-HA browser suite
+  (run 44998273335), which exercises HA's real blueprint/save + automation
+  config API path. CI fixes along the way: narrow layout fills the screen so
+  the drawer swipe works below short lists; browser checks expect autosaved
+  titles; the test HA now loads `automations.yaml` like a default install
+  (without it, UI-created automations never load and setup would re-prompt).
 - Known gaps: a timed reminder missed while HA was down is not replayed (the
   daily repeat catches it next day); HA Lists itself does not yet follow list
   entity renames in its list selection (pre-existing).
