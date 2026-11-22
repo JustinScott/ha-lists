@@ -1123,7 +1123,8 @@ class HaListsPanel extends HTMLElement {
         li .completed { text-decoration:line-through; color:var(--secondary-text-color); }
         ul { list-style:none; padding:0; }
         @media(max-width:650px) { main { padding:12px; } .layout { grid-template-columns:1fr; } }
-        :host([narrow]) main { padding:12px; }
+        /* Fill the screen so the drawer swipe works below a short list. */
+        :host([narrow]) main { padding:12px; box-sizing:border-box; min-height:calc(100dvh - var(--header-height,56px)); }
         :host([narrow]) .layout { grid-template-columns:1fr; }
       `;
       const header = document.createElement("header");
